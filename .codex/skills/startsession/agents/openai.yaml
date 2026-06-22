@@ -1,0 +1,6 @@
+interface:
+  display_name: "Start Session"
+  short_description: "Start compact Linhgiang work."
+  default_prompt: "Use $startsession to sync compact Linhgiang context, inspect git state, and build."
+policy:
+  allow_implicit_invocation: true

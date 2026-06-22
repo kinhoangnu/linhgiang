@@ -1,0 +1,6 @@
+interface:
+  display_name: "Context Usage"
+  short_description: "Protect session context."
+  default_prompt: "Use $context-usage to checkpoint long Linhgiang work before context gets too large."
+policy:
+  allow_implicit_invocation: true

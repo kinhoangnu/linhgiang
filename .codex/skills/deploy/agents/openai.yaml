@@ -1,0 +1,6 @@
+interface:
+  display_name: "Deploy"
+  short_description: "Deploy Firebase targets."
+  default_prompt: "Use $deploy to inspect Linhgiang changes, validate them, and deploy the right Firebase target."
+policy:
+  allow_implicit_invocation: true

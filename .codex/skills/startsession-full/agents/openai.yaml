@@ -1,0 +1,6 @@
+interface:
+  display_name: "Start Full"
+  short_description: "Deep Linhgiang onboarding."
+  default_prompt: "Use $startsession-full to read the full Linhgiang project context and refresh continuity."
+policy:
+  allow_implicit_invocation: true

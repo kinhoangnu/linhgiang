@@ -1,0 +1,6 @@
+interface:
+  display_name: "Feature"
+  short_description: "Build a household feature."
+  default_prompt: "Use $feature to implement a scoped Linhgiang feature end to end."
+policy:
+  allow_implicit_invocation: true

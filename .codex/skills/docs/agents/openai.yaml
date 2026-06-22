@@ -1,0 +1,6 @@
+interface:
+  display_name: "Docs"
+  short_description: "Maintain Linhgiang docs."
+  default_prompt: "Use $docs to update README, AGENTS.md, continuity docs, or Codex guidance."
+policy:
+  allow_implicit_invocation: true

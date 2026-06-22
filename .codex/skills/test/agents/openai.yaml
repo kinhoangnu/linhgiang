@@ -1,0 +1,6 @@
+interface:
+  display_name: "Test"
+  short_description: "Run Linhgiang checks."
+  default_prompt: "Use $test to run the Linhgiang build and validation plan."
+policy:
+  allow_implicit_invocation: true

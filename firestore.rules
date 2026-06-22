@@ -1,0 +1,59 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function householdPath(householdId) {
+      return /databases/$(database)/documents/households/$(householdId);
+    }
+
+    function isHouseholdMember(householdId) {
+      return signedIn()
+        && exists(householdPath(householdId))
+        && request.auth.uid in get(householdPath(householdId)).data.memberIds;
+    }
+
+    function isCreatingOwnHousehold() {
+      return signedIn()
+        && request.resource.data.memberIds is list
+        && request.resource.data.memberIds.hasOnly([request.auth.uid])
+        && request.resource.data.memberIds.hasAll([request.auth.uid]);
+    }
+
+    match /households/{householdId} {
+      allow create: if isCreatingOwnHousehold();
+      allow read, update, delete: if isHouseholdMember(householdId);
+
+      match /members/{memberId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+
+      match /chores/{choreId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+
+      match /shoppingItems/{itemId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+
+      match /priceObservations/{observationId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+
+      match /stores/{storeId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+
+      match /settings/{settingId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

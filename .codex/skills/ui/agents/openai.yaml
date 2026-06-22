@@ -1,0 +1,6 @@
+interface:
+  display_name: "UI"
+  short_description: "Polish Linhgiang UI."
+  default_prompt: "Use $ui to work on responsive Linhgiang UI and visual QA."
+policy:
+  allow_implicit_invocation: true

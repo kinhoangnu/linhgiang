@@ -1,0 +1,6 @@
+interface:
+  display_name: "Firestore"
+  short_description: "Work on Firebase data."
+  default_prompt: "Use $firestore to update Linhgiang Auth, Firestore helpers, rules, or indexes."
+policy:
+  allow_implicit_invocation: true

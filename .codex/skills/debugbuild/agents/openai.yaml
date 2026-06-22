@@ -1,0 +1,6 @@
+interface:
+  display_name: "Debug Build"
+  short_description: "Fix build or test failures."
+  default_prompt: "Use $debugbuild to diagnose a Linhgiang build, test, Vite, Firebase, or Playwright failure."
+policy:
+  allow_implicit_invocation: true

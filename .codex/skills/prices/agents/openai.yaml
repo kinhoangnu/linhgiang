@@ -1,0 +1,6 @@
+interface:
+  display_name: "Prices"
+  short_description: "Handle grocery prices."
+  default_prompt: "Use $prices to work on price observations, lowest-price logic, and market data freshness."
+policy:
+  allow_implicit_invocation: true
