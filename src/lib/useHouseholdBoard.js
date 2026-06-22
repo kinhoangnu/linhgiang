@@ -19,7 +19,15 @@ import {
   withAuditFields,
   withUpdateFields
 } from "./firestore";
-import { createId, starterChores, starterShoppingItems } from "./householdData";
+import {
+  createId,
+  getCadenceLabel,
+  normalizeChore,
+  normalizeWeekdays,
+  starterChores,
+  starterShoppingItems,
+  todayDateKey
+} from "./householdData";
 import { useLocalStorage } from "./useLocalStorage";
 
 export const householdId =
@@ -46,7 +54,7 @@ function getFriendlyFirestoreError(error) {
 
 function buildStarterChore(chore, index) {
   return {
-    ...chore,
+    ...normalizeChore(chore, index),
     completedByUid: null,
     sortOrder: index
   };
@@ -60,6 +68,139 @@ function buildStarterShoppingItem(item, index) {
       observedByUid: null
     })),
     sortOrder: index
+  };
+}
+
+function cleanText(value, fallback) {
+  const cleaned = String(value || "").trim();
+
+  return cleaned || fallback;
+}
+
+function buildChoreFields(taskForm, startsOn, sortOrder, completionHistory = {}) {
+  const repeatType = ["once", "daily", "weekdays"].includes(taskForm.repeatType)
+    ? taskForm.repeatType
+    : "daily";
+  const weekdays = repeatType === "weekdays" ? normalizeWeekdays(taskForm.weekdays) : [];
+  const difficulty = ["easy", "medium", "difficult"].includes(taskForm.difficulty)
+    ? taskForm.difficulty
+    : "medium";
+
+  return {
+    area: cleanText(taskForm.area, "Home"),
+    assignee: cleanText(taskForm.assignee, "Anyone"),
+    cadence: getCadenceLabel(repeatType, weekdays),
+    completedAt: null,
+    completedBy: null,
+    completedByUid: null,
+    completionHistory,
+    difficulty,
+    done: false,
+    doneByBoth: false,
+    due: cleanText(taskForm.due, "Anytime"),
+    repeatType,
+    retiredOn: null,
+    sortOrder,
+    startsOn,
+    title: cleanText(taskForm.title, "Untitled task"),
+    weekdays
+  };
+}
+
+function hasHistoryBefore(chore, effectiveDate) {
+  if (chore.startsOn < effectiveDate) {
+    return true;
+  }
+
+  return Object.keys(chore.completionHistory || {}).some(
+    (completionDate) => completionDate < effectiveDate
+  );
+}
+
+function shouldUpdateChoreInPlace(chore, effectiveDate) {
+  return chore.startsOn >= effectiveDate && !hasHistoryBefore(chore, effectiveDate);
+}
+
+function getLatestCompletion(completionHistory) {
+  return Object.values(completionHistory || {})
+    .filter((completion) => completion?.completedAt)
+    .sort((left, right) => String(right.completedAt).localeCompare(String(left.completedAt)))[0];
+}
+
+function buildChoreTogglePatch(chore, taskState, activeMember, userId = null) {
+  const normalizedChore = normalizeChore(chore);
+  const completionHistory = { ...normalizedChore.completionHistory };
+  const selectedDate = taskState?.selectedDate || todayDateKey;
+
+  if (taskState?.done) {
+    const datesToClear =
+      taskState.completedDates?.length > 0
+        ? taskState.completedDates
+        : [taskState.occurrenceDate || selectedDate];
+
+    datesToClear.forEach((dateKey) => {
+      delete completionHistory[dateKey];
+    });
+
+    const latestCompletion = getLatestCompletion(completionHistory);
+
+    return {
+      completedAt: latestCompletion?.completedAt || null,
+      completedBy: latestCompletion?.completedBy || null,
+      completedByUid: latestCompletion?.completedByUid || null,
+      completionHistory,
+      done: false,
+      doneByBoth: false
+    };
+  }
+
+  const completedAt = new Date().toISOString();
+  const completion = {
+    completedAt,
+    completedBy: activeMember,
+    completedByUid: userId,
+    doneByBoth: Boolean(taskState?.doneByBoth)
+  };
+  const datesToComplete =
+    taskState?.pendingDates?.length > 0
+      ? taskState.pendingDates
+      : [taskState?.occurrenceDate || selectedDate];
+
+  datesToComplete.forEach((dateKey) => {
+    completionHistory[dateKey] = completion;
+  });
+
+  return {
+    completedAt,
+    completedBy: activeMember,
+    completedByUid: userId,
+    completionHistory,
+    done: true,
+    doneByBoth: completion.doneByBoth
+  };
+}
+
+function buildChoreResetPatch(chore, taskState) {
+  const normalizedChore = normalizeChore(chore);
+  const completionHistory = { ...normalizedChore.completionHistory };
+  const datesToClear =
+    taskState?.completedDates?.length > 0
+      ? taskState.completedDates
+      : [taskState?.occurrenceDate || taskState?.selectedDate || todayDateKey];
+
+  datesToClear.forEach((dateKey) => {
+    delete completionHistory[dateKey];
+  });
+
+  const latestCompletion = getLatestCompletion(completionHistory);
+
+  return {
+    completedAt: latestCompletion?.completedAt || null,
+    completedBy: latestCompletion?.completedBy || null,
+    completedByUid: latestCompletion?.completedByUid || null,
+    completionHistory,
+    done: false,
+    doneByBoth: false
   };
 }
 
@@ -164,48 +305,138 @@ export function useLocalHouseholdBoard(activeMember) {
     starterShoppingItems
   );
 
-  const toggleChore = useCallback(
-    async (choreId) => {
+  const addChore = useCallback(
+    async (taskForm, startsOn = todayDateKey) => {
+      if (!taskForm.title.trim()) {
+        return null;
+      }
+
+      const newChore = {
+        ...buildChoreFields(taskForm, startsOn, Date.now()),
+        id: createId("chore")
+      };
+
+      setChores((currentChores) => [newChore, ...currentChores]);
+      return newChore.id;
+    },
+    [setChores]
+  );
+
+  const updateChore = useCallback(
+    async (choreId, taskForm, effectiveDate = todayDateKey) => {
+      if (!taskForm.title.trim()) {
+        return null;
+      }
+
+      const newChoreId = createId("chore");
+
+      setChores((currentChores) => {
+        const normalizedChores = currentChores.map((chore, index) =>
+          normalizeChore(chore, index)
+        );
+        const chore = normalizedChores.find((candidate) => candidate.id === choreId);
+
+        if (!chore) {
+          return currentChores;
+        }
+
+        if (shouldUpdateChoreInPlace(chore, effectiveDate)) {
+          return normalizedChores.map((candidate) =>
+            candidate.id === choreId
+              ? {
+                  ...candidate,
+                  ...buildChoreFields(
+                    taskForm,
+                    candidate.startsOn,
+                    candidate.sortOrder,
+                    candidate.completionHistory
+                  ),
+                  id: candidate.id
+                }
+              : candidate
+          );
+        }
+
+        const retiredChores = normalizedChores.map((candidate) =>
+          candidate.id === choreId
+            ? {
+                ...candidate,
+                retiredOn: effectiveDate
+              }
+            : candidate
+        );
+
+        return [
+          {
+            ...buildChoreFields(taskForm, effectiveDate, chore.sortOrder),
+            id: newChoreId,
+            relatedChoreId: chore.relatedChoreId || chore.id
+          },
+          ...retiredChores
+        ];
+      });
+
+      return newChoreId;
+    },
+    [setChores]
+  );
+
+  const removeChore = useCallback(
+    async (choreId, effectiveDate = todayDateKey) => {
       setChores((currentChores) =>
-        currentChores.map((chore) => {
-          if (chore.id !== choreId) {
-            return chore;
-          }
+        currentChores.map((chore, index) => {
+          const normalizedChore = normalizeChore(chore, index);
 
-          if (chore.done) {
-            return {
-              ...chore,
-              completedAt: null,
-              completedBy: null,
-              completedByUid: null,
-              done: false
-            };
-          }
+          return normalizedChore.id === choreId
+            ? {
+                ...normalizedChore,
+                retiredOn: effectiveDate
+              }
+            : normalizedChore;
+        })
+      );
 
-          return {
-            ...chore,
-            completedAt: new Date().toISOString(),
-            completedBy: activeMember,
-            completedByUid: null,
-            done: true
-          };
+      return true;
+    },
+    [setChores]
+  );
+
+  const toggleChore = useCallback(
+    async (choreId, taskState = {}) => {
+      setChores((currentChores) =>
+        currentChores.map((chore, index) => {
+          const normalizedChore = normalizeChore(chore, index);
+
+          return normalizedChore.id === choreId
+            ? {
+                ...normalizedChore,
+                ...buildChoreTogglePatch(normalizedChore, taskState, activeMember)
+              }
+            : normalizedChore;
         })
       );
     },
     [activeMember, setChores]
   );
 
-  const resetChores = useCallback(async () => {
-    setChores((currentChores) =>
-      currentChores.map((chore) => ({
-        ...chore,
-        completedAt: null,
-        completedBy: null,
-        completedByUid: null,
-        done: false
-      }))
-    );
-  }, [setChores]);
+  const resetChores = useCallback(
+    async (tasks = []) => {
+      setChores((currentChores) =>
+        currentChores.map((chore, index) => {
+          const normalizedChore = normalizeChore(chore, index);
+          const taskState = tasks.find((task) => task.id === normalizedChore.id);
+
+          return taskState
+            ? {
+                ...normalizedChore,
+                ...buildChoreResetPatch(normalizedChore, taskState)
+              }
+            : normalizedChore;
+        })
+      );
+    },
+    [setChores]
+  );
 
   const addShoppingItem = useCallback(
     async (itemForm) => {
@@ -279,19 +510,22 @@ export function useLocalHouseholdBoard(activeMember) {
   );
 
   return {
+    addChore,
     addOffer,
     addShoppingItem,
-    chores,
+    chores: chores.map((chore, index) => normalizeChore(chore, index)).sort(sortByBoardOrder),
     error: "",
     inviteMember: null,
     loading: false,
     members: [],
     mode: "local",
+    removeChore,
     resetChores,
     saving: false,
     shoppingItems,
     toggleBought,
-    toggleChore
+    toggleChore,
+    updateChore
   };
 }
 
@@ -345,7 +579,9 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
             (snapshot) => {
               setChores(
                 snapshot.docs
-                  .map((choreDoc) => ({ id: choreDoc.id, ...choreDoc.data() }))
+                  .map((choreDoc, index) =>
+                    normalizeChore({ id: choreDoc.id, ...choreDoc.data() }, index)
+                  )
                   .sort(sortByBoardOrder)
               );
               markLoaded("chores");
@@ -415,8 +651,35 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     [user]
   );
 
-  const toggleChore = useCallback(
-    async (choreId) => {
+  const addChore = useCallback(
+    async (taskForm, startsOn = todayDateKey) => {
+      if (!taskForm.title.trim()) {
+        return null;
+      }
+
+      return runWrite(async () => {
+        const newChore = {
+          ...buildChoreFields(taskForm, startsOn, Date.now()),
+          id: createId("chore")
+        };
+
+        await setDoc(
+          doc(choresRef(db, householdId), newChore.id),
+          withAuditFields(newChore, user.uid)
+        );
+
+        return newChore.id;
+      });
+    },
+    [runWrite, user]
+  );
+
+  const updateChore = useCallback(
+    async (choreId, taskForm, effectiveDate = todayDateKey) => {
+      if (!taskForm.title.trim()) {
+        return null;
+      }
+
       const chore = chores.find((candidate) => candidate.id === choreId);
 
       if (!chore) {
@@ -424,23 +687,84 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
       }
 
       return runWrite(async () => {
-        const patch = chore.done
-          ? {
-              completedAt: null,
-              completedBy: null,
-              completedByUid: null,
-              done: false
-            }
-          : {
-              completedAt: new Date().toISOString(),
-              completedBy: activeMember,
-              completedByUid: user.uid,
-              done: true
-            };
+        if (shouldUpdateChoreInPlace(chore, effectiveDate)) {
+          await updateDoc(
+            doc(choresRef(db, householdId), choreId),
+            withUpdateFields(
+              {
+                ...buildChoreFields(
+                  taskForm,
+                  chore.startsOn,
+                  chore.sortOrder,
+                  chore.completionHistory
+                ),
+                id: chore.id
+              },
+              user.uid
+            )
+          );
 
+          return chore.id;
+        }
+
+        const newChore = {
+          ...buildChoreFields(taskForm, effectiveDate, chore.sortOrder),
+          id: createId("chore"),
+          relatedChoreId: chore.relatedChoreId || chore.id
+        };
+        const batch = writeBatch(db);
+
+        batch.update(
+          doc(choresRef(db, householdId), choreId),
+          withUpdateFields({ retiredOn: effectiveDate }, user.uid)
+        );
+        batch.set(
+          doc(choresRef(db, householdId), newChore.id),
+          withAuditFields(newChore, user.uid)
+        );
+
+        await batch.commit();
+        return newChore.id;
+      });
+    },
+    [chores, runWrite, user]
+  );
+
+  const removeChore = useCallback(
+    async (choreId, effectiveDate = todayDateKey) => {
+      const chore = chores.find((candidate) => candidate.id === choreId);
+
+      if (!chore) {
+        return null;
+      }
+
+      return runWrite(async () => {
         await updateDoc(
           doc(choresRef(db, householdId), choreId),
-          withUpdateFields(patch, user.uid)
+          withUpdateFields({ retiredOn: effectiveDate }, user.uid)
+        );
+
+        return true;
+      });
+    },
+    [chores, runWrite, user]
+  );
+
+  const toggleChore = useCallback(
+    async (choreId, taskState = {}) => {
+      const chore = chores.find((candidate) => candidate.id === choreId);
+
+      if (!chore) {
+        return null;
+      }
+
+      return runWrite(async () => {
+        await updateDoc(
+          doc(choresRef(db, householdId), choreId),
+          withUpdateFields(
+            buildChoreTogglePatch(chore, taskState, activeMember, user.uid),
+            user.uid
+          )
         );
 
         return true;
@@ -449,22 +773,20 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     [activeMember, chores, runWrite, user]
   );
 
-  const resetChores = useCallback(async () => {
+  const resetChores = useCallback(async (tasks = []) => {
     return runWrite(async () => {
       const batch = writeBatch(db);
 
-      chores.forEach((chore) => {
+      tasks.forEach((taskState) => {
+        const chore = chores.find((candidate) => candidate.id === taskState.id);
+
+        if (!chore) {
+          return;
+        }
+
         batch.update(
           doc(choresRef(db, householdId), chore.id),
-          withUpdateFields(
-            {
-              completedAt: null,
-              completedBy: null,
-              completedByUid: null,
-              done: false
-            },
-            user.uid
-          )
+          withUpdateFields(buildChoreResetPatch(chore, taskState), user.uid)
         );
       });
 
@@ -606,6 +928,7 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
   );
 
   return {
+    addChore,
     addOffer,
     addShoppingItem,
     chores,
@@ -614,10 +937,12 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     loading,
     members,
     mode: "cloud",
+    removeChore,
     resetChores,
     saving,
     shoppingItems,
     toggleBought,
-    toggleChore
+    toggleChore,
+    updateChore
   };
 }

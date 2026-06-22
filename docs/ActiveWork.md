@@ -4,7 +4,7 @@ Use this file as the compact continuity packet for routine Codex sessions. Keep 
 
 ## Current Focus
 
-Initial scaffold is complete and Firebase Hosting is live. The app now has local starter mode plus an authenticated Firestore sync path for the configured household id. Firestore rules allow the first account to create the household and a second authenticated account to self-join automatically.
+Initial scaffold is complete and Firebase Hosting is live. The app now has a mobile-first BCVN-inspired PWA shell, local starter mode, an authenticated Firestore sync path for the configured household id, a weekly chore calendar, and a shopping board. Firestore rules allow the first account to create the household and a second authenticated account to self-join automatically.
 
 ## Last Checkpoint
 
@@ -25,17 +25,20 @@ Started on 2026-06-22:
 - Redeployed Hosting with the Auth/Firestore bundle and deployed Firestore rules/indexes for the default database.
 - Replaced the primary UID-based member setup path with automatic self-join for up to two authenticated household accounts.
 - Redeployed Firestore rules/indexes and Hosting after the automatic self-join change; verified the live URL returned HTTP 200 and served the new JS bundle.
+- Polished the UI into a cleaner dark BCVN-style mobile-first layout, collapsed secondary forms, added installable PWA metadata, registered a production service worker, and updated the app icon.
+- Added a weekly chore calendar with add/edit/remove task controls, once/daily/weekday repeats, future-occurrence task versioning, automatic unfinished rollover, unfinished-day counts, difficulty colors, and per-completion "done by both people" tracking.
+- Expanded Playwright coverage to 15 desktop/mobile/tablet checks covering PWA assets, chore CRUD, rollover, both-person completion, Firebase account controls, and shopping price guidance.
+- Deployed the PWA polish and weekly chore calendar to Firebase Hosting and verified the live app returned HTTP 200.
 
 ## Next Task
 
 Recommended follow-up for the next session:
 
-1. Polish the UI for a cleaner mobile-first/PWA-ready experience, following the main BCVN app colors.
-2. Create or sign in to the first household account at the live Hosting URL.
-3. Confirm `households/linhgiang-home` contains that account in `memberIds`.
-4. Create or sign in to the partner account and confirm it self-joins without manual UID setup.
-5. Validate live Auth/Firestore chore and shopping writes from both accounts.
-6. Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
+1. Create or sign in to the first household account at the live Hosting URL.
+2. Confirm `households/linhgiang-home` contains that account in `memberIds`.
+3. Create or sign in to the partner account and confirm it self-joins without manual UID setup.
+4. Validate live Auth/Firestore weekly chore edits, rollover completions, and shopping writes from both accounts.
+5. Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
 
 ## Relevant Files
 
@@ -48,7 +51,10 @@ Recommended follow-up for the next session:
 - `src/lib/useFirebaseAuth.js`
 - `src/lib/useHouseholdBoard.js`
 - `src/lib/useLocalStorage.js`
+- `src/components/InstallPrompt.jsx`
 - `css/styles.css`
+- `public/manifest.webmanifest`
+- `public/sw.js`
 - `firebase.json`
 - `firestore.rules`
 - `firestore.indexes.json`
@@ -57,17 +63,20 @@ Recommended follow-up for the next session:
 
 ## Validation Baseline
 
-- `npm run build` passed on 2026-06-22 after automatic self-join changes.
-- `npm run test` passed on 2026-06-22 with 6/6 Playwright checks passing after automatic self-join changes.
-- `npm run deploy:hosting` passed on 2026-06-22 and released `https://linhgiang-19932004.web.app`.
+- `npm run build` passed on 2026-06-22 after the PWA polish and weekly calendar changes.
+- `npm run test` passed on 2026-06-22 with 15/15 Playwright checks passing after the PWA polish and weekly calendar changes.
+- Responsive visual checks passed on 2026-06-22 at 375px, 768px, and 1280px with no horizontal overflow.
+- `npm run deploy:hosting` passed on 2026-06-22 after the PWA polish and weekly calendar changes, releasing `https://linhgiang-19932004.web.app`.
 - `npm run deploy:rules` passed on 2026-06-22 and released `firestore.rules` plus `firestore.indexes.json`.
-- Live Hosting check passed on 2026-06-22 with HTTP 200 and bundle `/assets/index-BZbTYhvJ.js`.
+- Previous live Hosting check passed on 2026-06-22 with HTTP 200 after the automatic self-join deploy.
+- Live Hosting check passed on 2026-06-22 after the PWA polish and weekly calendar deploy with HTTP 200.
 - Playwright Chromium was installed locally with `npx playwright install chromium`.
 
 ## Open Risks
 
 - Automatic self-join is capped at two household members in `firestore.rules`; future multi-member setup should use an explicit invite flow.
 - Cloud persistence is unseeded until the first signed-in member creates `households/linhgiang-home`.
+- Existing Firestore chore documents are normalized client-side; live household data should be checked after deploy to confirm old starter chores display with the new weekly calendar fields.
 - Grocery price data is manually observed/sample data until a trusted source is chosen.
 - Hosting is live, and the signed-out app still uses local starter persistence.
 

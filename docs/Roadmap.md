@@ -14,16 +14,16 @@ Goals:
 - Add Playwright smoke coverage.
 - Add project-local Codex skills and continuity docs based on the BCVN setup.
 
-## Daily Chores
+## Weekly Chores
 
-Status: starter UI implemented; Firestore persistence pending.
+Status: weekly calendar implemented with local starter persistence and Firestore sync path.
 
 Planned behavior:
 
-- Show daily and recurring household tasks.
-- Assign each task to a household member or a shared rotation.
-- Mark completion with who completed it and when.
-- Surface overdue, due-today, and completed counts.
+- Show daily, once-off, and selected-weekday household tasks in a weekly calendar.
+- Let users add, edit, and remove tasks while applying changes to future occurrences.
+- Mark completion with who completed it, whether both people helped, and when.
+- Surface unfinished rollover counts, difficulty, due timing, and completed/open counts.
 - Keep history for accountability and later recurring-task analytics.
 
 ## Shopping And Prices
