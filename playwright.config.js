@@ -16,6 +16,10 @@ export default defineConfig({
     {
       name: "mobile",
       use: { ...devices["Pixel 7"] }
+    },
+    {
+      name: "tablet",
+      use: { viewport: { width: 768, height: 900 } }
     }
   ]
 });

@@ -37,3 +37,11 @@ export function withAuditFields(data, userId) {
     createdBy: data.createdBy ?? userId
   };
 }
+
+export function withUpdateFields(data, userId) {
+  return {
+    ...data,
+    updatedAt: serverTimestamp(),
+    updatedBy: userId
+  };
+}

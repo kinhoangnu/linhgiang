@@ -142,11 +142,13 @@ export function formatMoney(value, currency = "EUR") {
 }
 
 export function findLowestOffer(item) {
-  if (!item.offers.length) {
+  const offers = item.offers || [];
+
+  if (!offers.length) {
     return null;
   }
 
-  return item.offers.reduce((lowest, offer) => {
+  return offers.reduce((lowest, offer) => {
     if (!lowest || offer.price < lowest.price) {
       return offer;
     }

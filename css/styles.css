@@ -32,6 +32,11 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 button:focus-visible,
 input:focus-visible,
 select:focus-visible {
@@ -132,6 +137,29 @@ p {
   background: rgba(255, 255, 255, 0.66);
 }
 
+.account-chip {
+  display: grid;
+  gap: 3px;
+  min-height: 44px;
+  padding: 6px 12px;
+  border: 1px solid rgba(21, 59, 53, 0.14);
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.account-chip span {
+  color: #5c6f6b;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.account-chip strong {
+  color: #153b35;
+  font-size: 0.95rem;
+}
+
 .member-select {
   display: grid;
   gap: 4px;
@@ -146,6 +174,98 @@ input {
   background: #ffffff;
   color: #17201f;
   padding: 0 12px;
+}
+
+input[readonly] {
+  background: #f7fbfa;
+  color: #41504d;
+}
+
+.cloud-panel {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(21, 59, 53, 0.12);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.76);
+  box-shadow: 0 18px 40px rgba(21, 59, 53, 0.08);
+}
+
+.cloud-panel-header,
+.cloud-grid,
+.member-list,
+.auth-mode-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.cloud-panel-header {
+  justify-content: space-between;
+}
+
+.cloud-panel-header h2 {
+  font-size: 1.25rem;
+}
+
+.cloud-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
+}
+
+.cloud-grid label {
+  display: grid;
+  gap: 5px;
+}
+
+.auth-mode-switch {
+  padding: 4px;
+  border: 1px solid rgba(21, 59, 53, 0.14);
+  border-radius: 8px;
+  background: #eef5f2;
+}
+
+.auth-mode-switch button {
+  min-width: 92px;
+  border-radius: 6px;
+  background: transparent;
+  color: #53625f;
+  font-weight: 800;
+}
+
+.auth-mode-switch button.is-active {
+  background: #153b35;
+  color: #ffffff;
+}
+
+.cloud-panel .inline-form {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
+.status-line,
+.empty-state {
+  margin-bottom: 0;
+  color: #9c4d18;
+  font-weight: 750;
+}
+
+.member-list {
+  flex-wrap: wrap;
+}
+
+.member-list span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  background: #eaf2ff;
+  color: #266fc9;
+  font-size: 0.82rem;
+  font-weight: 800;
 }
 
 .overview-grid {
@@ -327,11 +447,29 @@ input {
     flex-direction: column;
   }
 
+  .cloud-panel-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .cloud-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-mode-switch {
+    width: 100%;
+  }
+
+  .auth-mode-switch button {
+    flex: 1;
+  }
+
   .topbar-controls {
     justify-content: stretch;
   }
 
   .sync-pill,
+  .account-chip,
   .member-select,
   .primary-button,
   .secondary-button,

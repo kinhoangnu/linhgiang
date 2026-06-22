@@ -70,13 +70,12 @@ Each skill includes trigger-focused metadata and `allow_implicit_invocation: tru
 
 ## Current Status
 
-Initial scaffold is complete. The repo is configured for Firebase project `linhgiang-19932004`, with a React/Vite starter app, Firestore rules, Playwright smoke coverage, documentation, and local Codex skills.
+Initial scaffold is complete and Firebase Hosting is live at `https://linhgiang-19932004.web.app`. The app has local starter mode plus an authenticated Firestore sync path for the configured household id. Firestore rules allow the first account to create the household and the second authenticated account to self-join automatically.
 
 Known active follow-ups:
 
-- Fill `.env` with Firebase web app config from the `linhgiang-19932004` Firebase project.
-- Replace local demo persistence with authenticated Firestore-backed household data.
-- Add invitation/member setup for the two household users.
+- Validate live Auth/Firestore writes after automatic household self-join.
+- Consider whether automatic self-join should stay capped at two members or move to an invite-code flow.
 - Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
 
 ## Validation

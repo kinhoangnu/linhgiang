@@ -14,3 +14,22 @@ test("shows chores and shopping price guidance", async ({ page }) => {
   await expect(page.getByText("Asian grocery")).toBeVisible();
   await expect(page.getByText("Needs check")).toBeVisible();
 });
+
+test("shows Firebase account controls when configured", async ({ page }) => {
+  await page.goto("/");
+
+  const cloudAccount = page.getByLabel("Cloud account");
+
+  if ((await cloudAccount.count()) === 0) {
+    await expect(page.getByText("Local starter mode")).toBeVisible();
+    return;
+  }
+
+  const accountMode = cloudAccount.getByLabel("Account mode");
+
+  await expect(accountMode.getByRole("button", { name: "Sign in" })).toBeVisible();
+
+  await accountMode.getByRole("button", { name: "Create" }).click();
+  await expect(cloudAccount.getByRole("heading", { name: "Create account" })).toBeVisible();
+  await expect(cloudAccount.getByLabel("Display name")).toBeVisible();
+});
