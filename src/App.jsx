@@ -1,22 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import { isFirebaseConfigured } from "./firebase";
 import {
-  addDays,
   countOpenShoppingItems,
   difficultyOptions,
   findLowestOffer,
   formatDisplayDate,
-  getDateFromKey,
   formatMoney,
-  getVisibleChoresForDate,
-  getWeekDates,
-  getWeekStart,
+  getAvailableChoresForDate,
+  hasAvailableChoreWithTitle,
   householdMembers,
-  normalizeWeekdays,
   starterShoppingItems,
   summarizeChores,
-  todayDateKey,
-  weekDayOptions
+  todayDateKey
 } from "./lib/householdData";
 import {
   useFirestoreHouseholdBoard,
@@ -43,9 +38,8 @@ const emptyTaskForm = {
   assignee: "Anyone",
   difficulty: "medium",
   due: "Anytime",
-  repeatType: "daily",
-  title: "",
-  weekdays: [1, 2, 3, 4, 5]
+  profileId: "",
+  title: ""
 };
 
 const emptyAuthForm = {
@@ -58,7 +52,6 @@ function App() {
   const authSession = useFirebaseAuth();
   const [activeView, setActiveView] = useState("chores");
   const [authMode, setAuthMode] = useState("sign-in");
-  const [selectedDate, setSelectedDate] = useState(todayDateKey);
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState("");
   const [activeMember, setActiveMember] = useLocalStorage(
@@ -85,43 +78,22 @@ function App() {
     user: authSession.user
   });
   const board = isFirebaseConfigured && authSession.user ? cloudBoard : localBoard;
-  const { chores, shoppingItems } = board;
-  const selectedWeekStart = useMemo(() => getWeekStart(selectedDate), [selectedDate]);
-  const weekDates = useMemo(() => getWeekDates(selectedWeekStart), [selectedWeekStart]);
-  const selectedChores = useMemo(
-    () => getVisibleChoresForDate(chores, selectedDate),
-    [chores, selectedDate]
+  const { chores, shoppingItems, taskProfiles = [] } = board;
+  const availableChores = useMemo(
+    () => getAvailableChoresForDate(chores, todayDateKey),
+    [chores]
   );
-  const weekStats = useMemo(
-    () =>
-      weekDates.map((dateKey) => {
-        const dayChores = getVisibleChoresForDate(chores, dateKey);
-        const daySummary = summarizeChores(dayChores);
-
-        return {
-          dateKey,
-          ...daySummary
-        };
-      }),
-    [chores, weekDates]
+  const taskAlreadyAvailable = useMemo(
+    () => hasAvailableChoreWithTitle(chores, taskForm.title, editingChoreId, todayDateKey),
+    [chores, editingChoreId, taskForm.title]
   );
 
-  const choreSummary = useMemo(() => summarizeChores(selectedChores), [selectedChores]);
+  const choreSummary = useMemo(() => summarizeChores(availableChores), [availableChores]);
   const openShoppingItems = useMemo(
     () => countOpenShoppingItems(shoppingItems),
     [shoppingItems]
   );
   const syncLabel = getSyncLabel({ authSession, board });
-  const selectedDateLabel = formatDisplayDate(selectedDate, {
-    weekday: "long",
-    month: "short",
-    day: "numeric"
-  });
-  const weekRangeLabel = `${formatDisplayDate(weekDates[0], {
-    month: "short",
-    day: "numeric"
-  })} - ${formatDisplayDate(weekDates[6], { month: "short", day: "numeric" })}`;
-
   useEffect(() => {
     if (!shoppingItems.length) {
       if (offerForm.itemId) {
@@ -139,13 +111,8 @@ function App() {
   }, [offerForm.itemId, shoppingItems]);
 
   function openAddTaskForm() {
-    const selectedWeekday = getDateFromKey(selectedDate).getDay();
-
     setEditingChoreId("");
-    setTaskForm({
-      ...emptyTaskForm,
-      weekdays: [selectedWeekday]
-    });
+    setTaskForm(emptyTaskForm);
     setIsTaskPanelOpen(true);
   }
 
@@ -168,37 +135,38 @@ function App() {
     }));
   }
 
-  function toggleTaskWeekday(weekday) {
+  function selectTaskProfile(profileId) {
+    const profile = taskProfiles.find((taskProfile) => taskProfile.id === profileId);
+
+    if (!profile) {
+      updateTaskForm("profileId", "");
+      return;
+    }
+
     setTaskForm((form) => {
-      const weekdays = new Set(form.weekdays);
-
-      if (weekdays.has(weekday)) {
-        weekdays.delete(weekday);
-      } else {
-        weekdays.add(weekday);
-      }
-
       return {
         ...form,
-        weekdays: normalizeWeekdays([...weekdays])
+        area: profile.area,
+        assignee: profile.assignee,
+        difficulty: profile.difficulty,
+        due: profile.due,
+        profileId: profile.id,
+        title: profile.title
       };
     });
   }
 
   async function handleTaskSubmit(event) {
     event.preventDefault();
-    const taskPayload = {
-      ...taskForm,
-      weekdays:
-        taskForm.repeatType === "weekdays" && taskForm.weekdays.length === 0
-          ? [getDateFromKey(selectedDate).getDay()]
-          : taskForm.weekdays
-    };
+
+    if (taskAlreadyAvailable) {
+      return;
+    }
 
     if (editingChoreId) {
-      await board.updateChore(editingChoreId, taskPayload, selectedDate);
+      await board.updateChore(editingChoreId, taskForm, todayDateKey);
     } else {
-      await board.addChore(taskPayload, selectedDate);
+      await board.addChore(taskForm, todayDateKey);
     }
 
     closeTaskForm();
@@ -209,7 +177,7 @@ function App() {
       return;
     }
 
-    await board.removeChore(editingChoreId, selectedDate);
+    await board.removeChore(editingChoreId, todayDateKey);
     closeTaskForm();
   }
 
@@ -222,26 +190,13 @@ function App() {
       doneByBoth: Boolean(doneByBothByTask[doneByBothKey]),
       occurrenceDate: chore.occurrenceDate,
       pendingDates: chore.pendingDates,
-      selectedDate
+      selectedDate: todayDateKey
     });
 
     setDoneByBothByTask((current) => ({
       ...current,
       [doneByBothKey]: false
     }));
-  }
-
-  async function resetSelectedDay() {
-    await board.resetChores(
-      selectedChores
-        .filter((chore) => chore.done)
-        .map((chore) => ({
-          completedDates: chore.completedDates,
-          id: chore.id,
-          occurrenceDate: chore.occurrenceDate,
-          selectedDate
-        }))
-    );
   }
 
   async function handleAuthSubmit(event) {
@@ -424,11 +379,9 @@ function App() {
 
       <section className="overview-grid" aria-label="Household overview">
         <article className="metric-panel">
-          <span className="metric-label">Chores left</span>
+          <span className="metric-label">Tasks available</span>
           <strong>{choreSummary.open}</strong>
-          <span>
-            {choreSummary.completed} of {choreSummary.total} done
-          </span>
+          <span>{taskProfiles.length} saved</span>
         </article>
         <article className="metric-panel">
           <span className="metric-label">Shopping open</span>
@@ -460,73 +413,18 @@ function App() {
         <section className="workspace" aria-labelledby="chores-title">
           <div className="section-heading">
             <div>
-              <p className="eyebrow">Weekly chores</p>
-              <h2 id="chores-title">{selectedDate === todayDateKey ? "Today" : selectedDateLabel}</h2>
+              <p className="eyebrow">Available tasks</p>
+              <h2 id="chores-title">Today</h2>
               <p>
-                {selectedDateLabel} · {choreSummary.completed} of {choreSummary.total} done
+                {choreSummary.open} available · {taskProfiles.length} saved
               </p>
             </div>
             <div className="section-actions">
               <button type="button" className="secondary-button" onClick={openAddTaskForm}>
                 Add task
               </button>
-              <button
-                type="button"
-                className="ghost-button"
-                disabled={
-                  board.loading || board.saving || selectedChores.every((chore) => !chore.done)
-                }
-                onClick={resetSelectedDay}
-              >
-                Reset day
-              </button>
             </div>
           </div>
-
-          <section className="calendar-panel" aria-label="Weekly chore calendar">
-            <div className="calendar-nav">
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => setSelectedDate(addDays(selectedWeekStart, -7))}
-              >
-                Prev
-              </button>
-              <div>
-                <p className="eyebrow">Week</p>
-                <strong>{weekRangeLabel}</strong>
-              </div>
-              <button
-                type="button"
-                className="ghost-button"
-                onClick={() => setSelectedDate(addDays(selectedWeekStart, 7))}
-              >
-                Next
-              </button>
-            </div>
-            <div className="week-strip">
-              {weekStats.map((day) => (
-                <button
-                  type="button"
-                  key={day.dateKey}
-                  className={day.dateKey === selectedDate ? "is-active" : ""}
-                  aria-label={`${formatDisplayDate(day.dateKey, {
-                    weekday: "long",
-                    month: "short",
-                    day: "numeric"
-                  })}: ${day.open} chores left`}
-                  aria-pressed={day.dateKey === selectedDate}
-                  onClick={() => setSelectedDate(day.dateKey)}
-                >
-                  <span>{formatDisplayDate(day.dateKey, { weekday: "short" })}</span>
-                  <strong>{formatDisplayDate(day.dateKey, { day: "numeric" })}</strong>
-                  <small>
-                    {day.open}/{day.total}
-                  </small>
-                </button>
-              ))}
-            </div>
-          </section>
 
           <details
             className="tool-panel task-form-panel"
@@ -535,6 +433,22 @@ function App() {
           >
             <summary>{editingChoreId ? "Edit task" : "Task details"}</summary>
             <form className="inline-form task-form" onSubmit={handleTaskSubmit}>
+              {!editingChoreId && taskProfiles.length > 0 && (
+                <label>
+                  <span>Saved task</span>
+                  <select
+                    value={taskForm.profileId}
+                    onChange={(event) => selectTaskProfile(event.target.value)}
+                  >
+                    <option value="">New task</option>
+                    {taskProfiles.map((profile) => (
+                      <option key={profile.id} value={profile.id}>
+                        {getTaskProfileOptionLabel(profile)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label>
                 <span>Task</span>
                 <input
@@ -572,17 +486,6 @@ function App() {
                 />
               </label>
               <label>
-                <span>Repeat</span>
-                <select
-                  value={taskForm.repeatType}
-                  onChange={(event) => updateTaskForm("repeatType", event.target.value)}
-                >
-                  <option value="once">Once</option>
-                  <option value="daily">Daily</option>
-                  <option value="weekdays">Selected weekdays</option>
-                </select>
-              </label>
-              <label>
                 <span>Difficulty</span>
                 <select
                   value={taskForm.difficulty}
@@ -596,27 +499,19 @@ function App() {
                 </select>
               </label>
 
-              {taskForm.repeatType === "weekdays" && (
-                <fieldset className="weekday-picker">
-                  <legend>Days</legend>
-                  {weekDayOptions.map((day) => (
-                    <label key={day.value}>
-                      <input
-                        type="checkbox"
-                        checked={taskForm.weekdays.includes(day.value)}
-                        onChange={() => toggleTaskWeekday(day.value)}
-                      />
-                      <span>{day.label}</span>
-                    </label>
-                  ))}
-                </fieldset>
+              {taskAlreadyAvailable && (
+                <p className="form-note" role="status">
+                  Already available
+                </p>
               )}
 
               <div className="form-actions">
                 <button
                   type="submit"
                   className="primary-button"
-                  disabled={board.loading || board.saving || !taskForm.title.trim()}
+                  disabled={
+                    board.loading || board.saving || !taskForm.title.trim() || taskAlreadyAvailable
+                  }
                 >
                   {editingChoreId ? "Save changes" : "Save task"}
                 </button>
@@ -627,7 +522,7 @@ function App() {
                     disabled={board.saving}
                     onClick={removeEditingTask}
                   >
-                    Remove future
+                    Remove task
                   </button>
                 )}
                 <button type="button" className="ghost-button" onClick={closeTaskForm}>
@@ -640,15 +535,13 @@ function App() {
           <div className="task-list">
             {board.loading ? (
               <p className="empty-state">Loading household data...</p>
-            ) : selectedChores.length === 0 ? (
-              <p className="empty-state">No chores scheduled for this day.</p>
+            ) : availableChores.length === 0 ? (
+              <p className="empty-state">No available tasks yet.</p>
             ) : (
-              selectedChores.map((chore) => (
+              availableChores.map((chore) => (
                 <article
-                  className={`task-card difficulty-${chore.difficulty} ${
-                    chore.done ? "is-done" : ""
-                  }`}
-                  key={`${chore.id}-${chore.occurrenceDate}`}
+                  className={`task-card difficulty-${chore.difficulty}`}
+                  key={chore.id}
                 >
                   <div>
                     <div className="task-title-row">
@@ -659,48 +552,34 @@ function App() {
                       </span>
                       {chore.overdueDays > 0 && (
                         <span className="overdue-chip">
-                          {chore.overdueDays} {chore.overdueDays === 1 ? "day" : "days"} unfinished
+                          {chore.overdueDays} {chore.overdueDays === 1 ? "day" : "days"} not done
                         </span>
                       )}
                     </div>
-                    <p>
-                      {chore.assignee} · {chore.due} · {chore.cadence}
-                    </p>
-                    {chore.done && chore.completion?.completedAt && (
-                      <p className="completion-line">
-                        Completed by {chore.completion.completedBy} at{" "}
-                        {new Intl.DateTimeFormat(undefined, {
-                          hour: "2-digit",
-                          minute: "2-digit"
-                        }).format(new Date(chore.completion.completedAt))}
-                        {chore.completion.doneByBoth ? " · Done by both people" : ""}
-                      </p>
-                    )}
+                    <p>{chore.assignee} · {chore.due}</p>
                   </div>
                   <div className="task-actions">
-                    {!chore.done && (
-                      <label className="done-by-both">
-                        <input
-                          type="checkbox"
-                          checked={Boolean(doneByBothByTask[getDoneByBothKey(chore)])}
-                          onChange={(event) =>
-                            setDoneByBothByTask((current) => ({
-                              ...current,
-                              [getDoneByBothKey(chore)]: event.target.checked
-                            }))
-                          }
-                        />
-                        <span>Done by both people</span>
-                      </label>
-                    )}
+                    <label className="done-by-both">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(doneByBothByTask[getDoneByBothKey(chore)])}
+                        onChange={(event) =>
+                          setDoneByBothByTask((current) => ({
+                            ...current,
+                            [getDoneByBothKey(chore)]: event.target.checked
+                          }))
+                        }
+                      />
+                      <span>Done by both people</span>
+                    </label>
                     <button
                       type="button"
-                      className={chore.done ? "secondary-button" : "primary-button"}
+                      className="primary-button"
                       disabled={board.saving}
                       onClick={() => toggleChoreCompletion(chore)}
-                      aria-label={`${chore.done ? "Reopen" : "Done"} ${chore.title}`}
+                      aria-label={`Done ${chore.title}`}
                     >
-                      {chore.done ? "Reopen" : "Done"}
+                      Done
                     </button>
                     <button
                       type="button"
@@ -907,18 +786,23 @@ function getTaskFormFromChore(chore) {
     assignee: chore.assignee || "Anyone",
     difficulty: chore.difficulty || "medium",
     due: chore.due || "Anytime",
-    repeatType: chore.repeatType || "daily",
-    title: chore.title || "",
-    weekdays: normalizeWeekdays(chore.weekdays)
+    profileId: chore.profileId || "",
+    title: chore.title || ""
   };
 }
 
 function getDoneByBothKey(chore) {
-  return `${chore.id}:${chore.occurrenceDate}`;
+  return chore.id;
 }
 
 function getDifficultyLabel(difficulty) {
   return difficultyOptions.find((option) => option.value === difficulty)?.label || "Medium";
+}
+
+function getTaskProfileOptionLabel(profile) {
+  const completedCount = Number(profile.completedCount) || 0;
+
+  return `${profile.title} - ${completedCount} ${completedCount === 1 ? "done" : "done"}`;
 }
 
 function getSyncLabel({ authSession, board }) {

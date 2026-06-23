@@ -14,6 +14,10 @@ export function choresRef(db, householdId) {
   return collection(householdRef(db, householdId), "chores");
 }
 
+export function taskProfilesRef(db, householdId) {
+  return collection(householdRef(db, householdId), "taskProfiles");
+}
+
 export function shoppingItemsRef(db, householdId) {
   return collection(householdRef(db, householdId), "shoppingItems");
 }

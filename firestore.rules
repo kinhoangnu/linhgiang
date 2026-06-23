@@ -54,6 +54,10 @@ service cloud.firestore {
         allow read, write: if isHouseholdMember(householdId);
       }
 
+      match /taskProfiles/{profileId} {
+        allow read, write: if isHouseholdMember(householdId);
+      }
+
       match /shoppingItems/{itemId} {
         allow read, write: if isHouseholdMember(householdId);
       }

@@ -2,40 +2,13 @@ export const householdMembers = ["You", "Partner"];
 
 const oneDayMs = 24 * 60 * 60 * 1000;
 
-export const weekDayOptions = [
-  { value: 1, label: "Mon", longLabel: "Monday" },
-  { value: 2, label: "Tue", longLabel: "Tuesday" },
-  { value: 3, label: "Wed", longLabel: "Wednesday" },
-  { value: 4, label: "Thu", longLabel: "Thursday" },
-  { value: 5, label: "Fri", longLabel: "Friday" },
-  { value: 6, label: "Sat", longLabel: "Saturday" },
-  { value: 0, label: "Sun", longLabel: "Sunday" }
-];
-
 export const difficultyOptions = [
   { value: "easy", label: "Easy" },
   { value: "medium", label: "Medium" },
   { value: "difficult", label: "Difficult" }
 ];
 
-const validRepeatTypes = new Set(["once", "daily", "weekdays"]);
 const validDifficulties = new Set(difficultyOptions.map((option) => option.value));
-const weekdayByToken = {
-  fri: 5,
-  friday: 5,
-  mon: 1,
-  monday: 1,
-  sat: 6,
-  saturday: 6,
-  sun: 0,
-  sunday: 0,
-  thu: 4,
-  thursday: 4,
-  tue: 2,
-  tuesday: 2,
-  wed: 3,
-  wednesday: 3
-};
 
 export function formatDateKey(date) {
   const year = date.getFullYear();
@@ -53,107 +26,16 @@ export function getDateFromKey(dateKey) {
   return new Date(year, month - 1, day);
 }
 
-export function addDays(dateKey, days) {
-  const date = getDateFromKey(dateKey);
-  date.setDate(date.getDate() + days);
-
-  return formatDateKey(date);
-}
-
 export function diffDays(startDateKey, endDateKey) {
   return Math.round((getDateFromKey(endDateKey) - getDateFromKey(startDateKey)) / oneDayMs);
-}
-
-export function getWeekStart(dateKey) {
-  const date = getDateFromKey(dateKey);
-  const mondayOffset = (date.getDay() + 6) % 7;
-  date.setDate(date.getDate() - mondayOffset);
-
-  return formatDateKey(date);
-}
-
-export function getWeekDates(dateKey) {
-  const weekStart = getWeekStart(dateKey);
-
-  return Array.from({ length: 7 }, (_, index) => addDays(weekStart, index));
 }
 
 export function formatDisplayDate(dateKey, options = {}) {
   return new Intl.DateTimeFormat(undefined, options).format(getDateFromKey(dateKey));
 }
 
-export function normalizeWeekdays(weekdays) {
-  if (!Array.isArray(weekdays)) {
-    return [];
-  }
-
-  const weekdaySet = new Set(
-    weekdays.map(Number).filter((weekday) => Number.isInteger(weekday) && weekday >= 0 && weekday <= 6)
-  );
-
-  return weekDayOptions
-    .map((option) => option.value)
-    .filter((weekday) => weekdaySet.has(weekday));
-}
-
-function parseCadenceWeekdays(cadence) {
-  return normalizeWeekdays(
-    String(cadence || "")
-      .split(/[^a-z]+/i)
-      .map((token) => weekdayByToken[token.toLowerCase()])
-      .filter((weekday) => weekday !== undefined)
-  );
-}
-
-export function getCadenceLabel(repeatType, weekdays = []) {
-  if (repeatType === "once") {
-    return "Once";
-  }
-
-  if (repeatType === "daily") {
-    return "Daily";
-  }
-
-  const normalizedWeekdays = normalizeWeekdays(weekdays);
-
-  if (!normalizedWeekdays.length) {
-    return "Selected days";
-  }
-
-  return normalizedWeekdays
-    .map((weekday) => weekDayOptions.find((option) => option.value === weekday)?.label)
-    .filter(Boolean)
-    .join("/");
-}
-
-function inferRepeatType(chore) {
-  if (validRepeatTypes.has(chore.repeatType)) {
-    return chore.repeatType;
-  }
-
-  if (String(chore.cadence || "").toLowerCase() === "daily") {
-    return "daily";
-  }
-
-  if (parseCadenceWeekdays(chore.cadence).length) {
-    return "weekdays";
-  }
-
-  return "daily";
-}
-
-function inferWeekdays(chore, repeatType) {
-  if (repeatType !== "weekdays") {
-    return [];
-  }
-
-  const explicitWeekdays = normalizeWeekdays(chore.weekdays);
-
-  if (explicitWeekdays.length) {
-    return explicitWeekdays;
-  }
-
-  return parseCadenceWeekdays(chore.cadence);
+export function getCadenceLabel() {
+  return "Once";
 }
 
 function normalizeCompletionHistory(chore, startsOn) {
@@ -177,225 +59,137 @@ function normalizeCompletionHistory(chore, startsOn) {
   return completionHistory;
 }
 
+export function normalizeTaskTitle(title) {
+  return String(title || "").trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function getTaskProfileId(title) {
+  const normalizedTitle = normalizeTaskTitle(title);
+  const slug = normalizedTitle
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+
+  return `task-profile-${slug || "untitled"}`;
+}
+
+export function normalizeTaskProfile(profile, index = 0) {
+  const title = profile.title || "Untitled task";
+  const completedCount = Number(profile.completedCount);
+
+  return {
+    ...profile,
+    area: profile.area || "Home",
+    assignee: profile.assignee || "Anyone",
+    completedCount: Number.isFinite(completedCount) && completedCount > 0 ? completedCount : 0,
+    difficulty: validDifficulties.has(profile.difficulty) ? profile.difficulty : "medium",
+    due: profile.due || "Anytime",
+    id: profile.id || getTaskProfileId(title),
+    lastAddedAt: profile.lastAddedAt || null,
+    lastCompletedAt: profile.lastCompletedAt || null,
+    normalizedTitle: normalizeTaskTitle(title),
+    sortOrder: profile.sortOrder ?? index,
+    title
+  };
+}
+
+export function sortTaskProfiles(left, right) {
+  const leftCount = Number(left.completedCount) || 0;
+  const rightCount = Number(right.completedCount) || 0;
+
+  if (leftCount !== rightCount) {
+    return rightCount - leftCount;
+  }
+
+  const leftRecent = left.lastCompletedAt || left.lastAddedAt || "";
+  const rightRecent = right.lastCompletedAt || right.lastAddedAt || "";
+
+  if (leftRecent !== rightRecent) {
+    return String(rightRecent).localeCompare(String(leftRecent));
+  }
+
+  return left.title.localeCompare(right.title);
+}
+
 export function normalizeChore(chore, index = 0) {
-  const repeatType = inferRepeatType(chore);
-  const weekdays = inferWeekdays(chore, repeatType);
   const startsOn = chore.startsOn || todayDateKey;
   const difficulty = validDifficulties.has(chore.difficulty) ? chore.difficulty : "medium";
   const completionHistory = normalizeCompletionHistory(chore, startsOn);
+  const title = chore.title || "Untitled task";
 
   return {
     ...chore,
     area: chore.area || "Home",
     assignee: chore.assignee || "Anyone",
-    cadence: getCadenceLabel(repeatType, weekdays),
+    cadence: getCadenceLabel(),
     completionHistory,
     difficulty,
     due: chore.due || "Anytime",
-    repeatType,
+    normalizedTitle: normalizeTaskTitle(title),
+    profileId: chore.profileId || getTaskProfileId(title),
+    repeatType: "once",
     retiredOn: chore.retiredOn || null,
     sortOrder: chore.sortOrder ?? index,
     startsOn,
-    title: chore.title || "Untitled task",
-    weekdays
+    title,
+    weekdays: []
   };
 }
 
-export function isChoreScheduledOnDate(chore, dateKey) {
-  const normalizedChore = normalizeChore(chore);
+function sortByBoardOrder(left, right) {
+  const leftOrder = left.sortOrder ?? Number.MAX_SAFE_INTEGER;
+  const rightOrder = right.sortOrder ?? Number.MAX_SAFE_INTEGER;
 
-  if (dateKey < normalizedChore.startsOn) {
-    return false;
+  if (leftOrder !== rightOrder) {
+    return leftOrder - rightOrder;
   }
 
-  if (normalizedChore.retiredOn && dateKey >= normalizedChore.retiredOn) {
-    return false;
-  }
-
-  if (normalizedChore.repeatType === "once") {
-    return dateKey === normalizedChore.startsOn;
-  }
-
-  if (normalizedChore.repeatType === "daily") {
-    return true;
-  }
-
-  return normalizedChore.weekdays.includes(getDateFromKey(dateKey).getDay());
+  return left.title.localeCompare(right.title);
 }
 
-export function getScheduledDatesThrough(chore, dateKey) {
-  const normalizedChore = normalizeChore(chore);
-  const dates = [];
-
-  if (dateKey < normalizedChore.startsOn) {
-    return dates;
-  }
-
-  for (
-    let currentDateKey = normalizedChore.startsOn;
-    currentDateKey <= dateKey;
-    currentDateKey = addDays(currentDateKey, 1)
-  ) {
-    if (isChoreScheduledOnDate(normalizedChore, currentDateKey)) {
-      dates.push(currentDateKey);
-    }
-  }
-
-  return dates;
-}
-
-export function getVisibleChoresForDate(chores, dateKey) {
+export function getAvailableChoresForDate(chores, dateKey = todayDateKey) {
   return chores
     .map((chore, index) => normalizeChore(chore, index))
-    .flatMap((chore) => {
+    .filter((chore) => {
+      if (dateKey < chore.startsOn) {
+        return false;
+      }
+
       if (chore.retiredOn && dateKey >= chore.retiredOn) {
-        return [];
+        return false;
       }
 
-      const scheduledDates = getScheduledDatesThrough(chore, dateKey);
-      const openDates = scheduledDates.filter((scheduledDate) => !chore.completionHistory[scheduledDate]);
-
-      if (openDates.length) {
-        const occurrenceDate = openDates[0];
-
-        return [
-          {
-            ...chore,
-            completedDates: [],
-            completion: null,
-            done: false,
-            occurrenceDate,
-            overdueDays: diffDays(occurrenceDate, dateKey),
-            pendingDates: openDates
-          }
-        ];
-      }
-
-      if (isChoreScheduledOnDate(chore, dateKey) && chore.completionHistory[dateKey]) {
-        return [
-          {
-            ...chore,
-            completedDates: [dateKey],
-            completion: chore.completionHistory[dateKey],
-            done: true,
-            occurrenceDate: dateKey,
-            overdueDays: 0,
-            pendingDates: []
-          }
-        ];
-      }
-
-      const completedTodayDates = Object.entries(chore.completionHistory)
-        .filter(([, completion]) => {
-          if (!completion?.completedAt) {
-            return false;
-          }
-
-          return formatDateKey(new Date(completion.completedAt)) === dateKey;
-        })
-        .map(([completionDateKey]) => completionDateKey)
-        .sort();
-
-      if (!completedTodayDates.length) {
-        return [];
-      }
-
-      const occurrenceDate = completedTodayDates[0];
-
-      return [
-        {
-          ...chore,
-          completedDates: completedTodayDates,
-          completion: chore.completionHistory[occurrenceDate],
-          done: true,
-          occurrenceDate,
-          overdueDays: diffDays(occurrenceDate, dateKey),
-          pendingDates: []
-        }
-      ];
+      return !chore.done && !chore.completionHistory[chore.startsOn];
     })
-    .sort((left, right) => {
-      const leftOrder = left.sortOrder ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = right.sortOrder ?? Number.MAX_SAFE_INTEGER;
-
-      if (leftOrder !== rightOrder) {
-        return leftOrder - rightOrder;
-      }
-
-      return left.title.localeCompare(right.title);
-    });
+    .map((chore) => ({
+      ...chore,
+      completedDates: [],
+      completion: null,
+      done: false,
+      occurrenceDate: chore.startsOn,
+      overdueDays: Math.max(0, diffDays(chore.startsOn, dateKey)),
+      pendingDates: [chore.startsOn]
+    }))
+    .sort(sortByBoardOrder);
 }
 
-export const starterChores = [
-  {
-    id: "kitchen-reset",
-    title: "Kitchen reset",
-    area: "Kitchen",
-    cadence: "Daily",
-    repeatType: "daily",
-    weekdays: [],
-    startsOn: todayDateKey,
-    retiredOn: null,
-    difficulty: "medium",
-    due: "After dinner",
-    assignee: "Anyone",
-    done: false,
-    completedBy: null,
-    completedAt: null,
-    completionHistory: {}
-  },
-  {
-    id: "laundry-check",
-    title: "Laundry check",
-    area: "Utility",
-    cadence: "Mon/Wed/Sat",
-    repeatType: "weekdays",
-    weekdays: [1, 3, 6],
-    startsOn: todayDateKey,
-    retiredOn: null,
-    difficulty: "easy",
-    due: "20:00",
-    assignee: "Partner",
-    done: false,
-    completedBy: null,
-    completedAt: null,
-    completionHistory: {}
-  },
-  {
-    id: "trash-recycling",
-    title: "Trash and recycling",
-    area: "Entry",
-    cadence: "Daily",
-    repeatType: "daily",
-    weekdays: [],
-    startsOn: todayDateKey,
-    retiredOn: null,
-    difficulty: "easy",
-    due: "21:00",
-    assignee: "You",
-    done: false,
-    completedBy: null,
-    completedAt: null,
-    completionHistory: {}
-  },
-  {
-    id: "bathroom-refresh",
-    title: "Bathroom refresh",
-    area: "Bathroom",
-    cadence: "Tue/Fri",
-    repeatType: "weekdays",
-    weekdays: [2, 5],
-    startsOn: todayDateKey,
-    retiredOn: null,
-    difficulty: "difficult",
-    due: "Before bed",
-    assignee: "Anyone",
-    done: false,
-    completedBy: null,
-    completedAt: null,
-    completionHistory: {}
+export function hasAvailableChoreWithTitle(chores, title, excludeChoreId = "", dateKey = todayDateKey) {
+  const normalizedTitle = normalizeTaskTitle(title);
+
+  if (!normalizedTitle) {
+    return false;
   }
-];
+
+  return getAvailableChoresForDate(chores, dateKey).some(
+    (chore) => chore.id !== excludeChoreId && chore.normalizedTitle === normalizedTitle
+  );
+}
+
+export const starterChores = [];
+
+export const starterTaskProfiles = [];
 
 export const starterShoppingItems = [
   {

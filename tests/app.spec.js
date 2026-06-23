@@ -1,13 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-test("shows chores and shopping price guidance", async ({ page }) => {
+test("shows an empty task board and shopping price guidance", async ({ page }) => {
   await page.goto("/");
 
   await expect(page.getByRole("heading", { name: "Linhgiang" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Today" })).toBeVisible();
-
-  await page.getByRole("button", { name: "Done Kitchen reset" }).click();
-  await expect(page.getByText("Completed by You")).toBeVisible();
+  await expect(page.getByText("No available tasks yet.")).toBeVisible();
 
   await page.getByRole("button", { name: "Shopping" }).click();
   await expect(page.getByRole("heading", { name: "Shopping list" })).toBeVisible();
@@ -15,14 +13,13 @@ test("shows chores and shopping price guidance", async ({ page }) => {
   await expect(page.getByText("Needs check")).toBeVisible();
 });
 
-test("adds, updates, and removes future chore occurrences", async ({ page }) => {
+test("adds, updates, and removes available tasks", async ({ page }) => {
   await page.goto("/");
 
   await page.getByRole("button", { name: "Add task" }).click();
   await page.getByLabel("Task").fill("Water balcony");
   await page.getByLabel("Area").fill("Plants");
   await page.getByLabel("Due").fill("Morning");
-  await page.getByLabel("Repeat").selectOption("daily");
   await page.getByLabel("Difficulty").selectOption("difficult");
   await page.getByRole("button", { name: "Save task" }).click();
 
@@ -42,12 +39,12 @@ test("adds, updates, and removes future chore occurrences", async ({ page }) => 
   await expect(updatedCard.getByText("Medium")).toBeVisible();
 
   await updatedCard.getByRole("button", { name: "Edit" }).click();
-  await page.getByRole("button", { name: "Remove future" }).click();
+  await page.getByRole("button", { name: "Remove task" }).click();
 
   await expect(page.getByText("Water balcony plants")).toBeHidden();
 });
 
-test("carries unfinished chores forward and records both-person completion", async ({ page }) => {
+test("carries unfinished tasks forward and ranks saved tasks by completion", async ({ page }) => {
   await page.addInitScript(() => {
     const formatDateKey = (date) => {
       const year = date.getFullYear();
@@ -68,6 +65,7 @@ test("carries unfinished chores forward and records both-person completion", asy
           cadence: "Once",
           completionHistory: {},
           difficulty: "easy",
+          done: false,
           due: "Evening",
           id: "missed-dusting",
           repeatType: "once",
@@ -86,13 +84,25 @@ test("carries unfinished chores forward and records both-person completion", asy
   const missedCard = page.locator(".task-card").filter({ hasText: "Missed dusting" });
 
   await expect(missedCard).toBeVisible();
-  await expect(missedCard.getByText("1 day unfinished")).toBeVisible();
+  await expect(missedCard.getByText("1 day not done")).toBeVisible();
 
   await missedCard.getByLabel("Done by both people").check();
   await missedCard.getByRole("button", { name: "Done Missed dusting" }).click();
 
-  await expect(missedCard.getByText("Completed by You")).toBeVisible();
-  await expect(missedCard.getByText("Done by both people")).toBeVisible();
+  await expect(missedCard).toBeHidden();
+  await expect(page.getByText("No available tasks yet.")).toBeVisible();
+
+  await page.getByRole("button", { name: "Add task" }).click();
+  await expect(page.getByLabel("Saved task")).toContainText("Missed dusting - 1 done");
+  await page.getByLabel("Saved task").selectOption({ label: "Missed dusting - 1 done" });
+  await page.getByRole("button", { name: "Save task" }).click();
+
+  await expect(missedCard).toBeVisible();
+
+  await page.getByRole("button", { name: "Add task" }).click();
+  await page.getByLabel("Saved task").selectOption({ label: "Missed dusting - 1 done" });
+  await expect(page.getByText("Already available")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save task" })).toBeDisabled();
 });
 
 test("shows Firebase account controls when configured", async ({ page }) => {

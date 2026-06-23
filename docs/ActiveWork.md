@@ -4,7 +4,7 @@ Use this file as the compact continuity packet for routine Codex sessions. Keep 
 
 ## Current Focus
 
-Initial scaffold is complete and Firebase Hosting is live. The app now has a mobile-first BCVN-inspired PWA shell, local starter mode, an authenticated Firestore sync path for the configured household id, a weekly chore calendar, and a shopping board. Firestore rules allow the first account to create the household and a second authenticated account to self-join automatically.
+Initial scaffold is complete and Firebase Hosting is live. The app now has a mobile-first BCVN-inspired PWA shell, local starter mode, an authenticated Firestore sync path for the configured household id, an available-task board with saved task profiles, and a shopping board. Firestore rules allow the first account to create the household and a second authenticated account to self-join automatically.
 
 ## Last Checkpoint
 
@@ -29,6 +29,8 @@ Started on 2026-06-22:
 - Added a weekly chore calendar with add/edit/remove task controls, once/daily/weekday repeats, future-occurrence task versioning, automatic unfinished rollover, unfinished-day counts, difficulty colors, and per-completion "done by both people" tracking.
 - Expanded Playwright coverage to 15 desktop/mobile/tablet checks covering PWA assets, chore CRUD, rollover, both-person completion, Firebase account controls, and shopping price guidance.
 - Deployed the PWA polish and weekly chore calendar to Firebase Hosting and verified the live app returned HTTP 200.
+- Replaced the weekly chore calendar with a single available-task list: all tasks are once-only, unfinished tasks roll forward with an `N days not done` note, completed tasks update saved profiles ranked by completion count, duplicate active tasks are blocked, and new dashboards start with no active chores or task suggestions.
+- Added the private `households/{householdId}/taskProfiles/{profileId}` collection path for reusable task profiles.
 
 ## Next Task
 
@@ -37,7 +39,7 @@ Recommended follow-up for the next session:
 1. Create or sign in to the first household account at the live Hosting URL.
 2. Confirm `households/linhgiang-home` contains that account in `memberIds`.
 3. Create or sign in to the partner account and confirm it self-joins without manual UID setup.
-4. Validate live Auth/Firestore weekly chore edits, rollover completions, and shopping writes from both accounts.
+4. Validate live Auth/Firestore available-task edits, task-profile completion counts, rollover notes, and shopping writes from both accounts.
 5. Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
 
 ## Relevant Files
@@ -65,6 +67,11 @@ Recommended follow-up for the next session:
 
 - `npm run build` passed on 2026-06-22 after the PWA polish and weekly calendar changes.
 - `npm run test` passed on 2026-06-22 with 15/15 Playwright checks passing after the PWA polish and weekly calendar changes.
+- `npm run build` passed on 2026-06-23 after the available-task and saved-profile changes.
+- `npm run test` passed on 2026-06-23 with 15/15 Playwright checks passing after the available-task and saved-profile changes.
+- `npm run deploy:hosting` passed on 2026-06-23 after the available-task and saved-profile changes, releasing `https://linhgiang-19932004.web.app`.
+- `npm run deploy:rules` passed on 2026-06-23 and released the `taskProfiles` Firestore rule path.
+- Live Hosting check passed on 2026-06-23 after deploy with HTTP 200.
 - Responsive visual checks passed on 2026-06-22 at 375px, 768px, and 1280px with no horizontal overflow.
 - `npm run deploy:hosting` passed on 2026-06-22 after the PWA polish and weekly calendar changes, releasing `https://linhgiang-19932004.web.app`.
 - `npm run deploy:rules` passed on 2026-06-22 and released `firestore.rules` plus `firestore.indexes.json`.
@@ -76,7 +83,7 @@ Recommended follow-up for the next session:
 
 - Automatic self-join is capped at two household members in `firestore.rules`; future multi-member setup should use an explicit invite flow.
 - Cloud persistence is unseeded until the first signed-in member creates `households/linhgiang-home`.
-- Existing Firestore chore documents are normalized client-side; live household data should be checked after deploy to confirm old starter chores display with the new weekly calendar fields.
+- Existing Firestore chore documents are normalized client-side as once-only available tasks; live household data should be checked after deploy to confirm old recurring chores do not create unwanted active tasks.
 - Grocery price data is manually observed/sample data until a trusted source is chosen.
 - Hosting is live, and the signed-out app still uses local starter persistence.
 

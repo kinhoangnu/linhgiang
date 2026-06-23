@@ -70,11 +70,11 @@ Each skill includes trigger-focused metadata and `allow_implicit_invocation: tru
 
 ## Current Status
 
-Initial scaffold is complete and Firebase Hosting is live at `https://linhgiang-19932004.web.app`. The app has local starter mode plus an authenticated Firestore sync path for the configured household id. Firestore rules allow the first account to create the household and the second authenticated account to self-join automatically.
+Initial scaffold is complete and Firebase Hosting is live at `https://linhgiang-19932004.web.app`. The app has local starter mode plus an authenticated Firestore sync path for the configured household id. Chores now use a single available-task list: adding a task makes one active task available today, unfinished tasks roll forward with an `N days not done` note, and completed tasks update saved task profiles ranked by completion count. Firestore rules allow the first account to create the household and the second authenticated account to self-join automatically.
 
 Known active follow-ups:
 
-- Validate live Auth/Firestore writes after automatic household self-join.
+- Validate live Auth/Firestore writes after automatic household self-join, including `taskProfiles` updates.
 - Consider whether automatic self-join should stay capped at two members or move to an invite-code flow.
 - Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
 

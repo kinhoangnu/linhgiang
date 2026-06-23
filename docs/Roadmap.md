@@ -14,16 +14,18 @@ Goals:
 - Add Playwright smoke coverage.
 - Add project-local Codex skills and continuity docs based on the BCVN setup.
 
-## Weekly Chores
+## Available Tasks
 
-Status: weekly calendar implemented with local starter persistence and Firestore sync path.
+Status: available-task board implemented with local starter persistence, Firestore sync, and saved task profiles.
 
 Planned behavior:
 
-- Show daily, once-off, and selected-weekday household tasks in a weekly calendar.
-- Let users add, edit, and remove tasks while applying changes to future occurrences.
+- Show one list of active tasks available today.
+- Treat every added task as once-only; unfinished tasks stay available and roll forward with an `N days not done` note.
+- Save added tasks as reusable task profiles so they can be selected instead of retyped.
+- Rank saved task profiles by completed count, with most completed tasks first.
+- Block duplicate active tasks with the same normalized title.
 - Mark completion with who completed it, whether both people helped, and when.
-- Surface unfinished rollover counts, difficulty, due timing, and completed/open counts.
 - Keep history for accountability and later recurring-task analytics.
 
 ## Shopping And Prices
