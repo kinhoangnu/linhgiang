@@ -4,7 +4,7 @@ Use this file as the compact continuity packet for routine Codex sessions. Keep 
 
 ## Current Focus
 
-Initial scaffold is complete and Firebase Hosting is live. The app now has a mobile-first BCVN-inspired PWA shell, local starter mode, an authenticated Firestore sync path for the configured household id, an available-task board with saved task profiles, a chore history/points summary, and a shopping board. Firestore rules allow the first account to create the household and a second authenticated account to self-join automatically.
+Initial scaffold is complete and Firebase Hosting is live. The app now has a mobile-first BCVN-inspired PWA shell, local starter mode for unconfigured development, a production sign-in gate, an authenticated Firestore sync path for the configured household id, an available-task board with saved task profiles, a chore history/points summary, and a shopping board. Firestore rules allow the first account to create the household and a second authenticated account to self-join automatically.
 
 ## Last Checkpoint
 
@@ -36,6 +36,10 @@ Started on 2026-06-22:
 - Renamed `Difficult` to `Hard`, kept legacy `difficult` normalization, and set chore points to Easy 1, Medium 2, Hard 4, Exceptional 6.
 - Allowed active tasks with the same title when area, owner, due, or difficulty differs; only exact active duplicates are blocked.
 - Updated the Playwright runner to choose a free Vite port and pass the actual base URL to Playwright when port 5173 is already occupied.
+- Restored the ignored local `.env` with the Firebase web app config for production builds.
+- Changed configured Firebase builds to require sign-in before showing or mutating household data; local starter persistence now appears only when Firebase config is missing or tests force it.
+- Added a Playwright production-gate check and kept the regular suite in forced local-starter mode unless `PLAYWRIGHT_USE_FIREBASE=1` is set.
+- Removed the signed-in `Cloud synced` topbar banner, added saved task profile removal from the add-task flow, and made task Area selectable from known saved/active areas while still allowing custom values.
 
 ## Next Task
 
@@ -44,7 +48,7 @@ Recommended follow-up for the next session:
 1. Create or sign in to the first household account at the live Hosting URL.
 2. Confirm `households/linhgiang-home` contains that account in `memberIds`.
 3. Create or sign in to the partner account and confirm it self-joins without manual UID setup.
-4. Validate live Auth/Firestore available-task edits, `choreCompletions` writes, Summary totals, task-profile completion counts, rollover notes, and shopping writes from both accounts.
+4. Validate live Auth/Firestore available-task edits, saved-task removal, selectable saved areas, `choreCompletions` writes, Summary totals, task-profile completion counts, rollover notes, and shopping writes from both accounts.
 5. Decide whether automatic self-join should stay capped at two members or move to an invite-code flow.
 6. Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
 
@@ -84,6 +88,15 @@ Recommended follow-up for the next session:
 - `npm run deploy:hosting` passed on 2026-06-27 after chore completion history, Summary, exact duplicate matching, and Exceptional difficulty scoring, releasing `https://linhgiang-19932004.web.app`.
 - `npm run deploy:rules` passed on 2026-06-27 and released the `choreCompletions` Firestore rule path.
 - Live Hosting check passed on 2026-06-27 after deploy with HTTP 200.
+- `npm run build` passed on 2026-06-27 after restoring production Firebase config and adding the sign-in gate.
+- `npm run test` passed on 2026-06-27 with 24/24 Playwright checks passing after the sign-in gate.
+- Firebase-enabled targeted Playwright check passed on 2026-06-27 for the production sign-in gate.
+- `npm run deploy:hosting` passed on 2026-06-27 after the production sign-in gate, releasing `https://linhgiang-19932004.web.app`.
+- Live Hosting check passed on 2026-06-27 after the final deploy with HTTP 200.
+- `npm run build` passed on 2026-06-27 after saved-task removal, selectable Area suggestions, and signed-in banner cleanup.
+- `npm run test` passed on 2026-06-27 with 27/27 Playwright checks passing after saved-task removal, selectable Area suggestions, and signed-in banner cleanup.
+- `npm run deploy:hosting` passed on 2026-06-27 after saved-task removal and selectable Area suggestions, releasing `https://linhgiang-19932004.web.app`.
+- Live Hosting check passed on 2026-06-27 after the saved-task deploy with HTTP 200.
 - Live Hosting check passed on 2026-06-23 after deploy with HTTP 200.
 - Responsive visual checks passed on 2026-06-22 at 375px, 768px, and 1280px with no horizontal overflow.
 - `npm run deploy:hosting` passed on 2026-06-22 after the PWA polish and weekly calendar changes, releasing `https://linhgiang-19932004.web.app`.
@@ -99,7 +112,6 @@ Recommended follow-up for the next session:
 - Existing Firestore chore documents are normalized client-side as once-only available tasks; live household data should be checked after deploy to confirm old recurring chores do not create unwanted active tasks.
 - Existing completed chores do not have backfilled `choreCompletions` records; Summary starts from new completions recorded after this feature is live.
 - Grocery price data is manually observed/sample data until a trusted source is chosen.
-- Hosting is live, and the signed-out app still uses local starter persistence.
 
 ## Do Not Forget
 

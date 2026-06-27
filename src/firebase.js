@@ -11,7 +11,10 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
-export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
+const forceLocalStarter = import.meta.env.VITE_FORCE_LOCAL_STARTER === "true";
+
+export const isFirebaseConfigured =
+  !forceLocalStarter && Object.values(firebaseConfig).every(Boolean);
 
 export const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
 export const auth = app ? getAuth(app) : null;

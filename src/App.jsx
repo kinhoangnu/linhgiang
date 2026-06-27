@@ -50,6 +50,33 @@ const emptyAuthForm = {
   password: ""
 };
 
+const cloudSignInBoard = {
+  addChore: async () => null,
+  addOffer: async () => false,
+  addShoppingItem: async () => null,
+  choreCompletions: [],
+  chores: [],
+  error: "",
+  inviteMember: null,
+  loading: false,
+  members: [],
+  mode: "auth",
+  removeChore: async () => null,
+  removeTaskProfile: async () => null,
+  resetChores: async () => null,
+  saving: false,
+  shoppingItems: [],
+  taskProfiles: [],
+  toggleBought: async () => null,
+  toggleChore: async () => null,
+  updateChore: async () => null
+};
+
+const checkingAccountBoard = {
+  ...cloudSignInBoard,
+  loading: true
+};
+
 function App() {
   const authSession = useFirebaseAuth();
   const [activeView, setActiveView] = useState("chores");
@@ -80,8 +107,18 @@ function App() {
     activeMember: actorName,
     user: authSession.user
   });
-  const board = isFirebaseConfigured && authSession.user ? cloudBoard : localBoard;
+  const board = isFirebaseConfigured
+    ? authSession.user
+      ? cloudBoard
+      : authSession.loading
+        ? checkingAccountBoard
+        : cloudSignInBoard
+    : localBoard;
   const { choreCompletions = [], chores, shoppingItems, taskProfiles = [] } = board;
+  const needsCloudAccount = isFirebaseConfigured && !authSession.user;
+  const cloudAccessMessage = authSession.loading
+    ? "Checking your account..."
+    : "Sign in to load household data.";
   const availableChores = useMemo(
     () => getAvailableChoresForDate(chores, todayDateKey),
     [chores]
@@ -92,6 +129,10 @@ function App() {
   );
 
   const choreSummary = useMemo(() => summarizeChores(availableChores), [availableChores]);
+  const taskAreaOptions = useMemo(
+    () => getTaskAreaOptions(taskProfiles, chores),
+    [chores, taskProfiles]
+  );
   const summaryMembers = useMemo(() => getSummaryMembers(board.members), [board.members]);
   const completionSummary = useMemo(
     () => buildCompletionSummary(choreCompletions, summaryMode, summaryMembers),
@@ -192,6 +233,18 @@ function App() {
     closeTaskForm();
   }
 
+  async function removeSelectedTaskProfile() {
+    if (!taskForm.profileId) {
+      return;
+    }
+
+    const didRemove = await board.removeTaskProfile(taskForm.profileId);
+
+    if (didRemove) {
+      setTaskForm(emptyTaskForm);
+    }
+  }
+
   async function toggleChoreCompletion(chore) {
     const doneByBothKey = getDoneByBothKey(chore);
 
@@ -262,12 +315,12 @@ function App() {
         </div>
 
         <div className="topbar-controls">
-          <span className="sync-pill">{syncLabel}</span>
+          {syncLabel && <span className="sync-pill">{syncLabel}</span>}
           {authSession.user ? (
             <button type="button" className="ghost-button" onClick={authSession.signOutUser}>
               Sign out
             </button>
-          ) : (
+          ) : !isFirebaseConfigured ? (
             <label className="member-select">
               <span>Acting as</span>
               <select
@@ -281,7 +334,7 @@ function App() {
                 ))}
               </select>
             </label>
-          )}
+          ) : null}
         </div>
       </header>
 
@@ -312,7 +365,7 @@ function App() {
       )}
 
       {isFirebaseConfigured && !authSession.user && (
-        <details className="account-panel" aria-label="Cloud account">
+        <details className="account-panel" aria-label="Cloud account" open>
           <summary>
             <div>
               <p className="eyebrow">Household sync</p>
@@ -321,6 +374,9 @@ function App() {
           </summary>
 
           <div className="account-panel-body">
+            <p className="status-line" role="status">
+              {cloudAccessMessage}
+            </p>
             <div className="auth-mode-switch" aria-label="Account mode">
               <button
                 type="button"
@@ -444,7 +500,12 @@ function App() {
               </p>
             </div>
             <div className="section-actions">
-              <button type="button" className="secondary-button" onClick={openAddTaskForm}>
+              <button
+                type="button"
+                className="secondary-button"
+                disabled={needsCloudAccount}
+                onClick={openAddTaskForm}
+              >
                 Add task
               </button>
             </div>
@@ -458,20 +519,30 @@ function App() {
             <summary>{editingChoreId ? "Edit task" : "Task details"}</summary>
             <form className="inline-form task-form" onSubmit={handleTaskSubmit}>
               {!editingChoreId && taskProfiles.length > 0 && (
-                <label>
-                  <span>Saved task</span>
-                  <select
-                    value={taskForm.profileId}
-                    onChange={(event) => selectTaskProfile(event.target.value)}
+                <div className="saved-task-control">
+                  <label>
+                    <span>Saved task</span>
+                    <select
+                      value={taskForm.profileId}
+                      onChange={(event) => selectTaskProfile(event.target.value)}
+                    >
+                      <option value="">New task</option>
+                      {taskProfiles.map((profile) => (
+                        <option key={profile.id} value={profile.id}>
+                          {getTaskProfileOptionLabel(profile)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    disabled={needsCloudAccount || board.saving || !taskForm.profileId}
+                    onClick={removeSelectedTaskProfile}
                   >
-                    <option value="">New task</option>
-                    {taskProfiles.map((profile) => (
-                      <option key={profile.id} value={profile.id}>
-                        {getTaskProfileOptionLabel(profile)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                    Remove saved
+                  </button>
+                </div>
               )}
               <label>
                 <span>Task</span>
@@ -485,9 +556,15 @@ function App() {
                 <span>Area</span>
                 <input
                   value={taskForm.area}
+                  list="task-area-options"
                   onChange={(event) => updateTaskForm("area", event.target.value)}
                   placeholder="Kitchen"
                 />
+                <datalist id="task-area-options">
+                  {taskAreaOptions.map((area) => (
+                    <option key={area} value={area} />
+                  ))}
+                </datalist>
               </label>
               <label>
                 <span>Owner</span>
@@ -534,7 +611,11 @@ function App() {
                   type="submit"
                   className="primary-button"
                   disabled={
-                    board.loading || board.saving || !taskForm.title.trim() || taskAlreadyAvailable
+                    needsCloudAccount ||
+                    board.loading ||
+                    board.saving ||
+                    !taskForm.title.trim() ||
+                    taskAlreadyAvailable
                   }
                 >
                   {editingChoreId ? "Save changes" : "Save task"}
@@ -557,7 +638,9 @@ function App() {
           </details>
 
           <div className="task-list">
-            {board.loading ? (
+            {needsCloudAccount ? (
+              <p className="empty-state">{cloudAccessMessage}</p>
+            ) : board.loading ? (
               <p className="empty-state">Loading household data...</p>
             ) : availableChores.length === 0 ? (
               <p className="empty-state">No available tasks yet.</p>
@@ -652,7 +735,9 @@ function App() {
           </div>
 
           <div className="summary-list">
-            {board.loading ? (
+            {needsCloudAccount ? (
+              <p className="empty-state">{cloudAccessMessage}</p>
+            ) : board.loading ? (
               <p className="empty-state">Loading household data...</p>
             ) : completionSummary.periods.length === 0 ? (
               <p className="empty-state">No completed chores yet.</p>
@@ -744,7 +829,7 @@ function App() {
                 <button
                   type="submit"
                   className="primary-button"
-                  disabled={board.loading || board.saving}
+                  disabled={needsCloudAccount || board.loading || board.saving}
                 >
                   Add item
                 </button>
@@ -758,7 +843,7 @@ function App() {
                   <span>Price for</span>
                   <select
                     value={offerForm.itemId}
-                    disabled={!shoppingItems.length}
+                    disabled={needsCloudAccount || !shoppingItems.length}
                     onChange={(event) =>
                       setOfferForm((form) => ({ ...form, itemId: event.target.value }))
                     }
@@ -812,7 +897,9 @@ function App() {
                 <button
                   type="submit"
                   className="secondary-button"
-                  disabled={board.loading || board.saving || !shoppingItems.length}
+                  disabled={
+                    needsCloudAccount || board.loading || board.saving || !shoppingItems.length
+                  }
                 >
                   Add price
                 </button>
@@ -821,7 +908,9 @@ function App() {
           </div>
 
           <div className="shopping-list">
-            {board.loading ? (
+            {needsCloudAccount ? (
+              <p className="empty-state">{cloudAccessMessage}</p>
+            ) : board.loading ? (
               <p className="empty-state">Loading household data...</p>
             ) : (
               shoppingItems.map((item) => {
@@ -891,6 +980,20 @@ function getTaskFormFromChore(chore) {
 
 function getDoneByBothKey(chore) {
   return chore.id;
+}
+
+function getTaskAreaOptions(taskProfiles, chores) {
+  const areas = new Set(["Home"]);
+
+  [...taskProfiles, ...chores].forEach((source) => {
+    const area = String(source.area || "").trim();
+
+    if (area) {
+      areas.add(area);
+    }
+  });
+
+  return Array.from(areas);
 }
 
 function getTaskProfileOptionLabel(profile) {
@@ -1029,10 +1132,10 @@ function getSyncLabel({ authSession, board }) {
       return "Cloud setup needed";
     }
 
-    return "Cloud synced";
+    return "";
   }
 
-  return isFirebaseConfigured ? "Firebase ready" : "Local starter mode";
+  return isFirebaseConfigured ? "Sign in for cloud" : "Local starter mode";
 }
 
 export default App;

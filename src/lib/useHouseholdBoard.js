@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   arrayUnion,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -548,6 +549,21 @@ export function useLocalHouseholdBoard(activeMember) {
     [setChores]
   );
 
+  const removeTaskProfile = useCallback(
+    async (profileId) => {
+      setTaskProfiles((currentProfiles) =>
+        currentProfiles.filter((profile, index) => {
+          const normalizedProfile = normalizeTaskProfile(profile, index);
+
+          return normalizedProfile.id !== profileId;
+        })
+      );
+
+      return true;
+    },
+    [setTaskProfiles]
+  );
+
   const toggleChore = useCallback(
     async (choreId, taskState = {}) => {
       const chore = chores
@@ -706,6 +722,7 @@ export function useLocalHouseholdBoard(activeMember) {
     members: [],
     mode: "local",
     removeChore,
+    removeTaskProfile,
     resetChores,
     saving: false,
     shoppingItems,
@@ -989,6 +1006,21 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     [chores, runWrite, user]
   );
 
+  const removeTaskProfile = useCallback(
+    async (profileId) => {
+      if (!profileId) {
+        return null;
+      }
+
+      return runWrite(async () => {
+        await deleteDoc(doc(taskProfilesRef(db, householdId), profileId));
+
+        return true;
+      });
+    },
+    [runWrite]
+  );
+
   const toggleChore = useCallback(
     async (choreId, taskState = {}) => {
       const chore = chores.find((candidate) => candidate.id === choreId);
@@ -1227,6 +1259,7 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     members,
     mode: "cloud",
     removeChore,
+    removeTaskProfile,
     resetChores,
     saving,
     shoppingItems,

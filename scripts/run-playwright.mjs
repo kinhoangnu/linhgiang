@@ -8,6 +8,10 @@ const playwrightRoot = path.dirname(require.resolve("playwright/package.json"));
 const playwrightCli = path.join(playwrightRoot, "cli.js");
 const preferredPort = Number(process.env.PLAYWRIGHT_PORT || 5173);
 
+if (process.env.PLAYWRIGHT_USE_FIREBASE !== "1") {
+  process.env.VITE_FORCE_LOCAL_STARTER = "true";
+}
+
 const server = await createServer({
   logLevel: "error",
   server: {

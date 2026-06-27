@@ -551,6 +551,18 @@ input::placeholder {
   grid-template-columns: repeat(3, minmax(136px, 1fr));
 }
 
+.saved-task-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 10px;
+  min-width: 0;
+}
+
+.saved-task-control .danger-button {
+  min-width: 128px;
+}
+
 .form-note {
   grid-column: 1 / -1;
 }
@@ -815,6 +827,10 @@ input::placeholder {
   }
 
   .task-form {
+    grid-template-columns: 1fr;
+  }
+
+  .saved-task-control {
     grid-template-columns: 1fr;
   }
 

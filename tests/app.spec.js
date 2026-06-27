@@ -105,6 +105,54 @@ test("carries unfinished tasks forward and ranks saved tasks by completion", asy
   await expect(page.getByRole("button", { name: "Save task" })).toBeDisabled();
 });
 
+test("removes saved task suggestions and offers saved areas", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem(
+      "linhgiang:task-profiles",
+      JSON.stringify([
+        {
+          area: "Hallway",
+          assignee: "Anyone",
+          completedCount: 3,
+          difficulty: "medium",
+          due: "Anytime",
+          id: "task-profile-vacuum-hallway",
+          title: "Vacuum hallway"
+        },
+        {
+          area: "Kitchen",
+          assignee: "Anyone",
+          completedCount: 1,
+          difficulty: "easy",
+          due: "Morning",
+          id: "task-profile-wipe-counter",
+          title: "Wipe counter"
+        }
+      ])
+    );
+  });
+
+  await page.goto("/");
+  await page.getByRole("button", { name: "Add task" }).click();
+
+  await expect(page.getByLabel("Saved task")).toContainText("Vacuum hallway - 3 done");
+
+  const areaOptions = await page.locator("#task-area-options option").evaluateAll((options) =>
+    options.map((option) => option.value)
+  );
+
+  expect(areaOptions).toEqual(expect.arrayContaining(["Home", "Hallway", "Kitchen"]));
+
+  await page.getByLabel("Saved task").selectOption({ label: "Vacuum hallway - 3 done" });
+  await expect(page.getByLabel("Area")).toHaveValue("Hallway");
+
+  await page.getByRole("button", { name: "Remove saved" }).click();
+
+  await expect(page.getByLabel("Saved task")).not.toContainText("Vacuum hallway");
+  await expect(page.getByLabel("Saved task")).toContainText("Wipe counter - 1 done");
+  await expect(page.getByLabel("Area")).toHaveValue("Home");
+});
+
 test("records chore history and summarizes weekly and monthly points", async ({ page }) => {
   await page.goto("/");
 
@@ -214,7 +262,11 @@ test("shows Firebase account controls when configured", async ({ page }) => {
     return;
   }
 
-  await cloudAccount.locator("summary").click();
+  const isOpen = await cloudAccount.evaluate((element) => element.open);
+
+  if (!isOpen) {
+    await cloudAccount.locator("summary").click();
+  }
 
   const accountMode = cloudAccount.getByLabel("Account mode");
 
@@ -223,6 +275,25 @@ test("shows Firebase account controls when configured", async ({ page }) => {
   await accountMode.getByRole("button", { name: "Create" }).click();
   await expect(cloudAccount.getByRole("heading", { name: "Create account" })).toBeVisible();
   await expect(cloudAccount.getByLabel("Display name")).toBeVisible();
+});
+
+test("requires sign-in before using cloud household data when configured", async ({ page }) => {
+  await page.goto("/");
+
+  const cloudAccount = page.getByLabel("Cloud account");
+
+  if ((await cloudAccount.count()) === 0) {
+    await expect(page.getByText("Local starter mode")).toBeVisible();
+    return;
+  }
+
+  await expect(page.getByText("Sign in for cloud")).toBeVisible();
+  await expect(cloudAccount.getByText("Sign in to load household data.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add task" })).toBeDisabled();
+
+  await page.getByRole("button", { name: "Shopping" }).click();
+  await page.locator(".tool-panel").filter({ hasText: "Add item" }).locator("summary").click();
+  await expect(page.getByRole("button", { name: "Add item" })).toBeDisabled();
 });
 
 test("exposes mobile app install assets", async ({ page }) => {
