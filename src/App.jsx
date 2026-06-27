@@ -7,7 +7,9 @@ import {
   formatDisplayDate,
   formatMoney,
   getAvailableChoresForDate,
-  hasAvailableChoreWithTitle,
+  getDateFromKey,
+  getDifficultyLabel,
+  hasMatchingAvailableChore,
   householdMembers,
   starterShoppingItems,
   summarizeChores,
@@ -52,6 +54,7 @@ function App() {
   const authSession = useFirebaseAuth();
   const [activeView, setActiveView] = useState("chores");
   const [authMode, setAuthMode] = useState("sign-in");
+  const [summaryMode, setSummaryMode] = useState("weeks");
   const [isTaskPanelOpen, setIsTaskPanelOpen] = useState(false);
   const [editingChoreId, setEditingChoreId] = useState("");
   const [activeMember, setActiveMember] = useLocalStorage(
@@ -78,17 +81,22 @@ function App() {
     user: authSession.user
   });
   const board = isFirebaseConfigured && authSession.user ? cloudBoard : localBoard;
-  const { chores, shoppingItems, taskProfiles = [] } = board;
+  const { choreCompletions = [], chores, shoppingItems, taskProfiles = [] } = board;
   const availableChores = useMemo(
     () => getAvailableChoresForDate(chores, todayDateKey),
     [chores]
   );
   const taskAlreadyAvailable = useMemo(
-    () => hasAvailableChoreWithTitle(chores, taskForm.title, editingChoreId, todayDateKey),
-    [chores, editingChoreId, taskForm.title]
+    () => hasMatchingAvailableChore(chores, taskForm, editingChoreId, todayDateKey),
+    [chores, editingChoreId, taskForm]
   );
 
   const choreSummary = useMemo(() => summarizeChores(availableChores), [availableChores]);
+  const summaryMembers = useMemo(() => getSummaryMembers(board.members), [board.members]);
+  const completionSummary = useMemo(
+    () => buildCompletionSummary(choreCompletions, summaryMode, summaryMembers),
+    [choreCompletions, summaryMembers, summaryMode]
+  );
   const openShoppingItems = useMemo(
     () => countOpenShoppingItems(shoppingItems),
     [shoppingItems]
@@ -129,9 +137,12 @@ function App() {
   }
 
   function updateTaskForm(field, value) {
+    const shouldClearProfile = ["area", "assignee", "difficulty", "due", "title"].includes(field);
+
     setTaskForm((form) => ({
       ...form,
-      [field]: value
+      [field]: value,
+      profileId: shouldClearProfile ? "" : form.profileId
     }));
   }
 
@@ -388,6 +399,11 @@ function App() {
           <strong>{openShoppingItems}</strong>
           <span>items still needed</span>
         </article>
+        <article className="metric-panel">
+          <span className="metric-label">Chore points</span>
+          <strong>{completionSummary.totalPoints}</strong>
+          <span>{completionSummary.totalTasks} tasks recorded</span>
+        </article>
       </section>
 
       <nav className="view-switch" aria-label="Household sections">
@@ -401,6 +417,14 @@ function App() {
         </button>
         <button
           type="button"
+          className={activeView === "summary" ? "is-active" : ""}
+          aria-pressed={activeView === "summary"}
+          onClick={() => setActiveView("summary")}
+        >
+          Summary
+        </button>
+        <button
+          type="button"
           className={activeView === "shopping" ? "is-active" : ""}
           aria-pressed={activeView === "shopping"}
           onClick={() => setActiveView("shopping")}
@@ -409,7 +433,7 @@ function App() {
         </button>
       </nav>
 
-      {activeView === "chores" ? (
+      {activeView === "chores" && (
         <section className="workspace" aria-labelledby="chores-title">
           <div className="section-heading">
             <div>
@@ -595,7 +619,81 @@ function App() {
             )}
           </div>
         </section>
-      ) : (
+      )}
+
+      {activeView === "summary" && (
+        <section className="workspace" aria-labelledby="summary-title">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Chore history</p>
+              <h2 id="summary-title">Summary</h2>
+              <p>
+                {completionSummary.totalTasks} tasks done · {completionSummary.totalPoints} points
+              </p>
+            </div>
+            <div className="summary-mode-switch" aria-label="Summary period">
+              <button
+                type="button"
+                className={summaryMode === "weeks" ? "is-active" : ""}
+                aria-pressed={summaryMode === "weeks"}
+                onClick={() => setSummaryMode("weeks")}
+              >
+                Weeks
+              </button>
+              <button
+                type="button"
+                className={summaryMode === "months" ? "is-active" : ""}
+                aria-pressed={summaryMode === "months"}
+                onClick={() => setSummaryMode("months")}
+              >
+                Months
+              </button>
+            </div>
+          </div>
+
+          <div className="summary-list">
+            {board.loading ? (
+              <p className="empty-state">Loading household data...</p>
+            ) : completionSummary.periods.length === 0 ? (
+              <p className="empty-state">No completed chores yet.</p>
+            ) : (
+              completionSummary.periods.map((period, index) => (
+                <details className="summary-period" key={period.key} open={index === 0}>
+                  <summary>
+                    <span className="summary-period-title">{period.label}</span>
+                    <span className="summary-period-totals">
+                      {formatMemberTotals(period.memberTotals)}
+                    </span>
+                  </summary>
+
+                  <div className="completion-list">
+                    {period.completions.map((completion) => (
+                      <article className="completion-row" key={completion.id}>
+                        <div>
+                          <h3>{completion.title}</h3>
+                          <p>
+                            {formatCompletionDate(completion.completedDate)} ·{" "}
+                            {getCompletionActorLabel(completion)} ·{" "}
+                            {getDifficultyLabel(completion.difficulty)}
+                          </p>
+                        </div>
+                        <div className="completion-meta">
+                          <span>{completion.area}</span>
+                          <strong>
+                            {completion.points} {completion.points === 1 ? "point" : "points"}
+                          </strong>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              ))
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeView === "shopping" && (
         <section className="workspace" aria-labelledby="shopping-title">
           <div className="section-heading">
             <div>
@@ -795,14 +893,122 @@ function getDoneByBothKey(chore) {
   return chore.id;
 }
 
-function getDifficultyLabel(difficulty) {
-  return difficultyOptions.find((option) => option.value === difficulty)?.label || "Medium";
-}
-
 function getTaskProfileOptionLabel(profile) {
   const completedCount = Number(profile.completedCount) || 0;
 
   return `${profile.title} - ${completedCount} ${completedCount === 1 ? "done" : "done"}`;
+}
+
+function getSummaryMembers(members = []) {
+  const memberNames = members
+    .map((member) => String(member.displayName || member.id || "").trim())
+    .filter(Boolean);
+
+  return memberNames.length > 0 ? memberNames : householdMembers;
+}
+
+function buildCompletionSummary(completions, mode, members) {
+  const periodMap = new Map();
+  let totalPoints = 0;
+
+  completions.forEach((completion) => {
+    const points = Number(completion.points) || 0;
+    const period = getCompletionPeriod(completion.completedDate, mode);
+
+    totalPoints += points;
+
+    if (!periodMap.has(period.key)) {
+      periodMap.set(period.key, {
+        ...period,
+        completions: [],
+        totalsByMember: new Map(members.map((member) => [member, { member, points: 0, tasks: 0 }]))
+      });
+    }
+
+    const bucket = periodMap.get(period.key);
+    const creditedMembers =
+      Array.isArray(completion.creditedMembers) && completion.creditedMembers.length > 0
+        ? completion.creditedMembers
+        : [completion.completedBy || "Someone"];
+
+    bucket.completions.push(completion);
+    creditedMembers.forEach((member) => {
+      if (!bucket.totalsByMember.has(member)) {
+        bucket.totalsByMember.set(member, { member, points: 0, tasks: 0 });
+      }
+
+      const memberTotal = bucket.totalsByMember.get(member);
+      memberTotal.tasks += 1;
+      memberTotal.points += points;
+    });
+  });
+
+  return {
+    periods: Array.from(periodMap.values())
+      .map((period) => ({
+        ...period,
+        completions: period.completions.sort((left, right) =>
+          String(right.completedAt).localeCompare(String(left.completedAt))
+        ),
+        memberTotals: Array.from(period.totalsByMember.values())
+      }))
+      .sort((left, right) => right.sortKey.localeCompare(left.sortKey)),
+    totalPoints,
+    totalTasks: completions.length
+  };
+}
+
+function getCompletionPeriod(dateKey, mode) {
+  if (mode === "months") {
+    const monthKey = String(dateKey || todayDateKey).slice(0, 7);
+
+    return {
+      key: monthKey,
+      label: formatDisplayDate(`${monthKey}-01`, { month: "long", year: "numeric" }),
+      sortKey: monthKey
+    };
+  }
+
+  const { week, year } = getIsoWeekInfo(dateKey || todayDateKey);
+
+  return {
+    key: `${year}-W${String(week).padStart(2, "0")}`,
+    label: `Week ${week}`,
+    sortKey: `${year}-W${String(week).padStart(2, "0")}`
+  };
+}
+
+function getIsoWeekInfo(dateKey) {
+  const date = getDateFromKey(dateKey);
+  const utcDate = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const day = utcDate.getUTCDay() || 7;
+
+  utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
+
+  const year = utcDate.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil((((utcDate - yearStart) / 86400000) + 1) / 7);
+
+  return { week, year };
+}
+
+function formatMemberTotals(memberTotals) {
+  return memberTotals
+    .map(
+      (total) =>
+        `${total.member} - ${total.tasks} ${total.tasks === 1 ? "task" : "tasks"} done ${total.points} ${
+          total.points === 1 ? "point" : "points"
+        }`
+    )
+    .join(", ");
+}
+
+function formatCompletionDate(dateKey) {
+  return formatDisplayDate(dateKey, { month: "short", day: "numeric" });
+}
+
+function getCompletionActorLabel(completion) {
+  return completion.doneByBoth ? "Both" : completion.completedBy || "Someone";
 }
 
 function getSyncLabel({ authSession, board }) {

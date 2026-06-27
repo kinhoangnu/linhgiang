@@ -12,6 +12,7 @@ import {
 } from "firebase/firestore";
 import { db, isFirebaseConfigured } from "../firebase";
 import {
+  choreCompletionsRef,
   choresRef,
   householdRef,
   membersRef,
@@ -22,14 +23,20 @@ import {
 } from "./firestore";
 import {
   createId,
-  getAvailableChoresForDate,
+  formatDateKey,
   getCadenceLabel,
+  getDifficultyPoints,
   getTaskProfileId,
-  hasAvailableChoreWithTitle,
+  hasMatchingAvailableChore,
+  householdMembers,
   normalizeChore,
+  normalizeChoreCompletion,
+  normalizeDifficulty,
   normalizeTaskProfile,
   normalizeTaskTitle,
+  sortChoreCompletions,
   sortTaskProfiles,
+  starterChoreCompletions,
   starterChores,
   starterTaskProfiles,
   starterShoppingItems,
@@ -85,26 +92,37 @@ function cleanText(value, fallback) {
 }
 
 function getDifficulty(value) {
-  return ["easy", "medium", "difficult"].includes(value) ? value : "medium";
+  return normalizeDifficulty(value);
 }
 
 function buildChoreFields(taskForm, startsOn, sortOrder, completionHistory = {}) {
   const title = cleanText(taskForm.title, "Untitled task");
+  const area = cleanText(taskForm.area, "Home");
+  const assignee = cleanText(taskForm.assignee, "Anyone");
+  const difficulty = getDifficulty(taskForm.difficulty);
+  const due = cleanText(taskForm.due, "Anytime");
+  const taskProfileSource = {
+    area,
+    assignee,
+    difficulty,
+    due,
+    title
+  };
 
   return {
-    area: cleanText(taskForm.area, "Home"),
-    assignee: cleanText(taskForm.assignee, "Anyone"),
+    area,
+    assignee,
     cadence: getCadenceLabel(),
     completedAt: null,
     completedBy: null,
     completedByUid: null,
     completionHistory,
-    difficulty: getDifficulty(taskForm.difficulty),
+    difficulty,
     done: false,
     doneByBoth: false,
-    due: cleanText(taskForm.due, "Anytime"),
+    due,
     normalizedTitle: normalizeTaskTitle(title),
-    profileId: getTaskProfileId(title),
+    profileId: taskForm.profileId || getTaskProfileId(taskProfileSource),
     repeatType: "once",
     retiredOn: null,
     sortOrder,
@@ -114,18 +132,95 @@ function buildChoreFields(taskForm, startsOn, sortOrder, completionHistory = {})
   };
 }
 
+function getCreditMembers(activeMember, doneByBoth, members = []) {
+  const activeName = cleanText(activeMember, "Someone");
+
+  if (!doneByBoth) {
+    return [activeName];
+  }
+
+  const memberNames = members
+    .map((member) => cleanText(member.displayName || member.id, ""))
+    .filter(Boolean);
+  const candidates = [activeName, ...memberNames, ...householdMembers];
+
+  return candidates.filter(
+    (memberName, index) => memberName && candidates.indexOf(memberName) === index
+  ).slice(0, 2);
+}
+
+function buildChoreCompletionFields(
+  chore,
+  taskState,
+  activeMember,
+  userId = null,
+  members = [],
+  completedAt = new Date().toISOString()
+) {
+  const normalizedChore = normalizeChore(chore);
+  const occurrenceDate =
+    taskState?.occurrenceDate || taskState?.pendingDates?.[0] || taskState?.selectedDate || todayDateKey;
+  const doneByBoth = Boolean(taskState?.doneByBoth);
+  const difficulty = getDifficulty(normalizedChore.difficulty);
+
+  return {
+    area: normalizedChore.area,
+    assignee: normalizedChore.assignee,
+    choreId: normalizedChore.id,
+    completedAt,
+    completedBy: cleanText(activeMember, "Someone"),
+    completedByUid: userId,
+    completedDate: formatDateKey(new Date(completedAt)),
+    creditedMembers: getCreditMembers(activeMember, doneByBoth, members),
+    difficulty,
+    doneByBoth,
+    due: normalizedChore.due,
+    id: createId("completion"),
+    occurrenceDate,
+    points: getDifficultyPoints(difficulty),
+    profileId: normalizedChore.profileId,
+    title: normalizedChore.title
+  };
+}
+
+function getCompletionDatesToClear(taskState = {}) {
+  if (taskState.completedDates?.length > 0) {
+    return taskState.completedDates;
+  }
+
+  return [taskState.occurrenceDate || taskState.selectedDate || todayDateKey];
+}
+
+function isMatchingCompletion(completion, chore, taskState = {}) {
+  const normalizedCompletion = normalizeChoreCompletion(completion);
+  const datesToClear = getCompletionDatesToClear(taskState);
+
+  return (
+    normalizedCompletion.choreId === chore.id &&
+    datesToClear.includes(normalizedCompletion.occurrenceDate)
+  );
+}
+
 function buildTaskProfileFields(source, existingProfile = {}, options = {}) {
   const title = cleanText(source.title, "Untitled task");
   const now = new Date().toISOString();
   const completedCount = Number(existingProfile.completedCount) || 0;
-
-  return {
+  const difficulty = getDifficulty(source.difficulty);
+  const taskProfileSource = {
     area: cleanText(source.area, "Home"),
     assignee: cleanText(source.assignee, "Anyone"),
-    completedCount: completedCount + (options.incrementCompletion ? 1 : 0),
-    difficulty: getDifficulty(source.difficulty),
+    difficulty,
     due: cleanText(source.due, "Anytime"),
-    id: source.profileId || existingProfile.id || getTaskProfileId(title),
+    title
+  };
+
+  return {
+    area: taskProfileSource.area,
+    assignee: taskProfileSource.assignee,
+    completedCount: completedCount + (options.incrementCompletion ? 1 : 0),
+    difficulty,
+    due: taskProfileSource.due,
+    id: source.profileId || existingProfile.id || getTaskProfileId(taskProfileSource),
     lastAddedAt: options.markAdded ? now : existingProfile.lastAddedAt || null,
     lastCompletedAt: options.incrementCompletion
       ? now
@@ -141,7 +236,13 @@ function getLatestCompletion(completionHistory) {
     .sort((left, right) => String(right.completedAt).localeCompare(String(left.completedAt)))[0];
 }
 
-function buildChoreTogglePatch(chore, taskState, activeMember, userId = null) {
+function buildChoreTogglePatch(
+  chore,
+  taskState,
+  activeMember,
+  userId = null,
+  completedAt = new Date().toISOString()
+) {
   const normalizedChore = normalizeChore(chore);
   const completionHistory = { ...normalizedChore.completionHistory };
   const selectedDate = taskState?.selectedDate || todayDateKey;
@@ -168,7 +269,6 @@ function buildChoreTogglePatch(chore, taskState, activeMember, userId = null) {
     };
   }
 
-  const completedAt = new Date().toISOString();
   const completion = {
     completedAt,
     completedBy: activeMember,
@@ -334,6 +434,10 @@ export function useLocalHouseholdBoard(activeMember) {
     "linhgiang:task-profiles",
     starterTaskProfiles
   );
+  const [choreCompletions, setChoreCompletions] = useLocalStorage(
+    "linhgiang:chore-completions",
+    starterChoreCompletions
+  );
   const [shoppingItems, setShoppingItems] = useLocalStorage(
     "linhgiang:shopping-items",
     starterShoppingItems
@@ -345,7 +449,7 @@ export function useLocalHouseholdBoard(activeMember) {
         const normalizedProfiles = currentProfiles.map((profile, index) =>
           normalizeTaskProfile(profile, index)
         );
-        const profileId = source.profileId || getTaskProfileId(source.title);
+        const profileId = source.profileId || getTaskProfileId(source);
         const existingProfile = normalizedProfiles.find((profile) => profile.id === profileId);
         const nextProfile = buildTaskProfileFields(source, existingProfile, options);
 
@@ -367,12 +471,8 @@ export function useLocalHouseholdBoard(activeMember) {
         return null;
       }
 
-      const duplicateChore = getAvailableChoresForDate(chores, todayDateKey).find(
-        (chore) => chore.normalizedTitle === normalizeTaskTitle(taskForm.title)
-      );
-
-      if (duplicateChore) {
-        return duplicateChore.id;
+      if (hasMatchingAvailableChore(chores, taskForm, "", todayDateKey)) {
+        return null;
       }
 
       const newChore = {
@@ -393,7 +493,7 @@ export function useLocalHouseholdBoard(activeMember) {
         return null;
       }
 
-      if (hasAvailableChoreWithTitle(chores, taskForm.title, choreId, todayDateKey)) {
+      if (hasMatchingAvailableChore(chores, taskForm, choreId, todayDateKey)) {
         return null;
       }
 
@@ -458,6 +558,8 @@ export function useLocalHouseholdBoard(activeMember) {
         return null;
       }
 
+      const completedAt = new Date().toISOString();
+
       setChores((currentChores) =>
         currentChores.map((chore, index) => {
           const normalizedChore = normalizeChore(chore, index);
@@ -465,23 +567,33 @@ export function useLocalHouseholdBoard(activeMember) {
           return normalizedChore.id === choreId
             ? {
                 ...normalizedChore,
-                ...buildChoreTogglePatch(normalizedChore, taskState, activeMember)
+                ...buildChoreTogglePatch(normalizedChore, taskState, activeMember, null, completedAt)
               }
             : normalizedChore;
         })
       );
 
       if (!taskState.done) {
+        setChoreCompletions((currentCompletions) => [
+          buildChoreCompletionFields(chore, taskState, activeMember, null, [], completedAt),
+          ...currentCompletions
+        ]);
         upsertTaskProfile(chore, { incrementCompletion: true });
+      } else {
+        setChoreCompletions((currentCompletions) =>
+          currentCompletions.filter((completion) => !isMatchingCompletion(completion, chore, taskState))
+        );
       }
 
       return true;
     },
-    [activeMember, chores, setChores, upsertTaskProfile]
+    [activeMember, chores, setChoreCompletions, setChores, upsertTaskProfile]
   );
 
   const resetChores = useCallback(
     async (tasks = []) => {
+      const normalizedChores = chores.map((chore, index) => normalizeChore(chore, index));
+
       setChores((currentChores) =>
         currentChores.map((chore, index) => {
           const normalizedChore = normalizeChore(chore, index);
@@ -495,8 +607,18 @@ export function useLocalHouseholdBoard(activeMember) {
             : normalizedChore;
         })
       );
+
+      setChoreCompletions((currentCompletions) =>
+        currentCompletions.filter((completion) => {
+          return !tasks.some((taskState) => {
+            const chore = normalizedChores.find((candidate) => candidate.id === taskState.id);
+
+            return chore && isMatchingCompletion(completion, chore, taskState);
+          });
+        })
+      );
     },
-    [setChores]
+    [chores, setChoreCompletions, setChores]
   );
 
   const addShoppingItem = useCallback(
@@ -574,6 +696,9 @@ export function useLocalHouseholdBoard(activeMember) {
     addChore,
     addOffer,
     addShoppingItem,
+    choreCompletions: choreCompletions
+      .map((completion, index) => normalizeChoreCompletion(completion, index))
+      .sort(sortChoreCompletions),
     chores: chores.map((chore, index) => normalizeChore(chore, index)).sort(sortByBoardOrder),
     error: "",
     inviteMember: null,
@@ -596,6 +721,7 @@ export function useLocalHouseholdBoard(activeMember) {
 export function useFirestoreHouseholdBoard({ activeMember, user }) {
   const [chores, setChores] = useState([]);
   const [taskProfiles, setTaskProfiles] = useState([]);
+  const [choreCompletions, setChoreCompletions] = useState([]);
   const [shoppingItems, setShoppingItems] = useState([]);
   const [members, setMembers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -606,6 +732,7 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     if (!isFirebaseConfigured || !db || !user) {
       setChores([]);
       setTaskProfiles([]);
+      setChoreCompletions([]);
       setShoppingItems([]);
       setMembers([]);
       setLoading(false);
@@ -616,7 +743,9 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     let cancelled = false;
     let unsubscribers = [];
     const loaded = {
+      choreCompletions: false,
       chores: false,
+      members: false,
       taskProfiles: false,
       shoppingItems: false
     };
@@ -624,7 +753,13 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     function markLoaded(key) {
       loaded[key] = true;
 
-      if (loaded.chores && loaded.taskProfiles && loaded.shoppingItems) {
+      if (
+        loaded.choreCompletions &&
+        loaded.chores &&
+        loaded.members &&
+        loaded.taskProfiles &&
+        loaded.shoppingItems
+      ) {
         setLoading(false);
       }
     }
@@ -676,6 +811,23 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
             }
           ),
           onSnapshot(
+            choreCompletionsRef(db, householdId),
+            (snapshot) => {
+              setChoreCompletions(
+                snapshot.docs
+                  .map((completionDoc, index) =>
+                    normalizeChoreCompletion({ id: completionDoc.id, ...completionDoc.data() }, index)
+                  )
+                  .sort(sortChoreCompletions)
+              );
+              markLoaded("choreCompletions");
+            },
+            (syncError) => {
+              setError(getFriendlyFirestoreError(syncError));
+              setLoading(false);
+            }
+          ),
+          onSnapshot(
             shoppingItemsRef(db, householdId),
             (snapshot) => {
               setShoppingItems(
@@ -698,6 +850,7 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
                   (left.displayName || left.id).localeCompare(right.displayName || right.id)
                 )
             );
+            markLoaded("members");
           })
         ];
       } catch (syncError) {
@@ -741,12 +894,8 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
         return null;
       }
 
-      const duplicateChore = getAvailableChoresForDate(chores, todayDateKey).find(
-        (chore) => chore.normalizedTitle === normalizeTaskTitle(taskForm.title)
-      );
-
-      if (duplicateChore) {
-        return duplicateChore.id;
+      if (hasMatchingAvailableChore(chores, taskForm, "", todayDateKey)) {
+        return null;
       }
 
       return runWrite(async () => {
@@ -787,7 +936,7 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
         return null;
       }
 
-      if (hasAvailableChoreWithTitle(chores, taskForm.title, choreId, todayDateKey)) {
+      if (hasMatchingAvailableChore(chores, taskForm, choreId, todayDateKey)) {
         return null;
       }
 
@@ -849,7 +998,14 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
       }
 
       return runWrite(async () => {
-        const chorePatch = buildChoreTogglePatch(chore, taskState, activeMember, user.uid);
+        const completedAt = new Date().toISOString();
+        const chorePatch = buildChoreTogglePatch(
+          chore,
+          taskState,
+          activeMember,
+          user.uid,
+          completedAt
+        );
         const batch = writeBatch(db);
 
         batch.update(
@@ -870,13 +1026,33 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
               : withAuditFields(profileFields, user.uid),
             { merge: true }
           );
+
+          const completionFields = buildChoreCompletionFields(
+            chore,
+            taskState,
+            activeMember,
+            user.uid,
+            members,
+            completedAt
+          );
+
+          batch.set(
+            doc(choreCompletionsRef(db, householdId), completionFields.id),
+            withAuditFields(completionFields, user.uid)
+          );
+        } else {
+          choreCompletions
+            .filter((completion) => isMatchingCompletion(completion, chore, taskState))
+            .forEach((completion) => {
+              batch.delete(doc(choreCompletionsRef(db, householdId), completion.id));
+            });
         }
 
         await batch.commit();
         return true;
       });
     },
-    [activeMember, chores, runWrite, taskProfiles, user]
+    [activeMember, choreCompletions, chores, members, runWrite, taskProfiles, user]
   );
 
   const resetChores = useCallback(async (tasks = []) => {
@@ -894,12 +1070,18 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
           doc(choresRef(db, householdId), chore.id),
           withUpdateFields(buildChoreResetPatch(chore, taskState), user.uid)
         );
+
+        choreCompletions
+          .filter((completion) => isMatchingCompletion(completion, chore, taskState))
+          .forEach((completion) => {
+            batch.delete(doc(choreCompletionsRef(db, householdId), completion.id));
+          });
       });
 
       await batch.commit();
       return true;
     });
-  }, [chores, runWrite, user]);
+  }, [choreCompletions, chores, runWrite, user]);
 
   const addShoppingItem = useCallback(
     async (itemForm) => {
@@ -1037,6 +1219,7 @@ export function useFirestoreHouseholdBoard({ activeMember, user }) {
     addChore,
     addOffer,
     addShoppingItem,
+    choreCompletions,
     chores,
     error,
     inviteMember,

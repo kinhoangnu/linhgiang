@@ -31,6 +31,7 @@ Use `npm install` when dependencies are missing or `package-lock.json` has chang
 - `src/lib/firestore.js` - Firestore path helpers for future persistence work.
 - `src/lib/useLocalStorage.js` - local starter persistence while Firebase wiring is being finished.
 - `css/styles.css` - shared responsive app styles.
+- `scripts/run-playwright.mjs` - starts a local Vite server and runs Playwright.
 - `tests` - Playwright smoke and workflow tests.
 - `docs/ActiveWork.md` - compact session continuity packet.
 - `docs/Roadmap.md` - larger roadmap/history notes.
@@ -63,6 +64,8 @@ Each skill includes trigger-focused metadata and `allow_implicit_invocation: tru
 - Use member names as display labels, but use authenticated user ids for authorization and durable ownership.
 - Price data must include source/store, observed price, package size/unit, and `observedAt` or `lastChecked` metadata.
 - Lowest-price recommendations are only as accurate as the latest source-dated observations. Do not present stale or estimated prices as live facts.
+- Completed chores should be recorded in `households/{householdId}/choreCompletions` with a snapshot of task title, area, due, difficulty, points, actor, and completion date.
+- Chore point values are Easy 1, Medium 2, Hard 4, and Exceptional 6; legacy `difficult` values normalize to Hard.
 - Keep secrets out of committed files. Firebase web config belongs in `.env`; service-account keys must never be committed.
 - Prefer focused, practical household workflows over broad dashboards.
 - Keep UI quiet, scan-friendly, mobile-first, and usable from a phone in the middle of chores or shopping.
@@ -70,11 +73,11 @@ Each skill includes trigger-focused metadata and `allow_implicit_invocation: tru
 
 ## Current Status
 
-Initial scaffold is complete and Firebase Hosting is live at `https://linhgiang-19932004.web.app`. The app has local starter mode plus an authenticated Firestore sync path for the configured household id. Chores now use a single available-task list: adding a task makes one active task available today, unfinished tasks roll forward with an `N days not done` note, and completed tasks update saved task profiles ranked by completion count. Firestore rules allow the first account to create the household and the second authenticated account to self-join automatically.
+Initial scaffold is complete and Firebase Hosting is live at `https://linhgiang-19932004.web.app`. The app has local starter mode plus an authenticated Firestore sync path for the configured household id. Chores use a single available-task list: adding a task makes one active task available today, unfinished tasks roll forward with an `N days not done` note, completed tasks update saved task profiles ranked by completion count, and durable completion records feed a weekly/monthly Summary tab with points. Firestore rules allow the first account to create the household and the second authenticated account to self-join automatically.
 
 Known active follow-ups:
 
-- Validate live Auth/Firestore writes after automatic household self-join, including `taskProfiles` updates.
+- Validate live Auth/Firestore writes after automatic household self-join, including `taskProfiles` and `choreCompletions` updates.
 - Consider whether automatic self-join should stay capped at two members or move to an invite-code flow.
 - Decide whether grocery prices will be manually entered, imported from receipts, or sourced from store APIs.
 

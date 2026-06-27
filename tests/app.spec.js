@@ -20,13 +20,13 @@ test("adds, updates, and removes available tasks", async ({ page }) => {
   await page.getByLabel("Task").fill("Water balcony");
   await page.getByLabel("Area").fill("Plants");
   await page.getByLabel("Due").fill("Morning");
-  await page.getByLabel("Difficulty").selectOption("difficult");
+  await page.getByLabel("Difficulty").selectOption("hard");
   await page.getByRole("button", { name: "Save task" }).click();
 
   const choreCard = page.locator(".task-card").filter({ hasText: "Water balcony" });
 
   await expect(choreCard).toBeVisible();
-  await expect(choreCard.getByText("Difficult")).toBeVisible();
+  await expect(choreCard.getByText("Hard")).toBeVisible();
 
   await choreCard.getByRole("button", { name: "Edit" }).click();
   await page.getByLabel("Task").fill("Water balcony plants");
@@ -105,6 +105,105 @@ test("carries unfinished tasks forward and ranks saved tasks by completion", asy
   await expect(page.getByRole("button", { name: "Save task" })).toBeDisabled();
 });
 
+test("records chore history and summarizes weekly and monthly points", async ({ page }) => {
+  await page.goto("/");
+
+  await addTask(page, {
+    area: "Kitchen",
+    difficulty: "easy",
+    title: "Wipe counter"
+  });
+  await completeTask(page, "Wipe counter");
+
+  await page.getByLabel("Acting as").selectOption("Partner");
+
+  await addTask(page, {
+    area: "Living room",
+    difficulty: "medium",
+    title: "Mop floor"
+  });
+  await completeTask(page, "Mop floor");
+
+  await addTask(page, {
+    area: "Kitchen",
+    difficulty: "hard",
+    title: "Clean oven"
+  });
+  await completeTask(page, "Clean oven", { doneByBoth: true });
+
+  await page.getByLabel("Acting as").selectOption("You");
+
+  await addTask(page, {
+    area: "Home",
+    difficulty: "exceptional",
+    title: "Reset storage room"
+  });
+  await completeTask(page, "Reset storage room");
+
+  await page.getByRole("button", { name: "Summary" }).click();
+
+  const firstPeriod = page.locator(".summary-period").first();
+
+  await expect(page.getByRole("heading", { name: "Summary" })).toBeVisible();
+  await expect(firstPeriod.locator("summary")).toContainText(/Week \d+/);
+  await expect(firstPeriod.locator("summary")).toContainText(
+    "You - 3 tasks done 11 points"
+  );
+  await expect(firstPeriod.locator("summary")).toContainText(
+    "Partner - 2 tasks done 6 points"
+  );
+
+  const ovenCompletion = page.locator(".completion-row").filter({ hasText: "Clean oven" });
+
+  await expect(ovenCompletion).toContainText("Both");
+  await expect(ovenCompletion).toContainText("Hard");
+  await expect(ovenCompletion).toContainText("4 points");
+
+  const storageCompletion = page.locator(".completion-row").filter({ hasText: "Reset storage room" });
+
+  await expect(storageCompletion).toContainText("Exceptional");
+  await expect(storageCompletion).toContainText("6 points");
+
+  await page.getByRole("button", { name: "Months" }).click();
+
+  const currentMonth = await page.evaluate(() =>
+    new Intl.DateTimeFormat(undefined, {
+      month: "long",
+      year: "numeric"
+    }).format(new Date())
+  );
+
+  await expect(page.locator(".summary-period").first().locator("summary")).toContainText(
+    currentMonth
+  );
+});
+
+test("allows duplicate task titles when task details differ", async ({ page }) => {
+  await page.goto("/");
+
+  await addTask(page, {
+    area: "Kitchen",
+    difficulty: "hard",
+    title: "Install new light"
+  });
+  await addTask(page, {
+    area: "Living room",
+    difficulty: "hard",
+    title: "Install new light"
+  });
+
+  await expect(page.locator(".task-card").filter({ hasText: "Install new light" })).toHaveCount(2);
+
+  await page.getByRole("button", { name: "Add task" }).click();
+  await page.getByRole("textbox", { name: "Task" }).fill("Install new light");
+  await page.getByLabel("Area").fill("Kitchen");
+  await page.getByLabel("Due").fill("Anytime");
+  await page.getByLabel("Difficulty").selectOption("hard");
+
+  await expect(page.getByText("Already available")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Save task" })).toBeDisabled();
+});
+
 test("shows Firebase account controls when configured", async ({ page }) => {
   await page.goto("/");
 
@@ -144,3 +243,23 @@ test("exposes mobile app install assets", async ({ page }) => {
     "/manifest.webmanifest"
   );
 });
+
+async function addTask(page, { area = "Home", difficulty = "medium", due = "Anytime", title }) {
+  await page.getByRole("button", { name: "Add task" }).click();
+  await page.getByRole("textbox", { name: "Task" }).fill(title);
+  await page.getByLabel("Area").fill(area);
+  await page.getByLabel("Due").fill(due);
+  await page.getByLabel("Difficulty").selectOption(difficulty);
+  await page.getByRole("button", { name: "Save task" }).click();
+}
+
+async function completeTask(page, title, options = {}) {
+  const choreCard = page.locator(".task-card").filter({ hasText: title });
+
+  if (options.doneByBoth) {
+    await choreCard.getByLabel("Done by both people").check();
+  }
+
+  await choreCard.getByRole("button", { name: `Done ${title}` }).click();
+  await expect(choreCard).toBeHidden();
+}

@@ -16,7 +16,7 @@ Goals:
 
 ## Available Tasks
 
-Status: available-task board implemented with local starter persistence, Firestore sync, and saved task profiles.
+Status: available-task board implemented with local starter persistence, Firestore sync, saved task profiles, and chore history scoring.
 
 Planned behavior:
 
@@ -24,9 +24,11 @@ Planned behavior:
 - Treat every added task as once-only; unfinished tasks stay available and roll forward with an `N days not done` note.
 - Save added tasks as reusable task profiles so they can be selected instead of retyped.
 - Rank saved task profiles by completed count, with most completed tasks first.
-- Block duplicate active tasks with the same normalized title.
-- Mark completion with who completed it, whether both people helped, and when.
-- Keep history for accountability and later recurring-task analytics.
+- Block only exact active duplicates; allow the same task title when area, owner, due, or difficulty differs.
+- Mark completion with who completed it, whether both people helped, when, difficulty, and point value.
+- Keep durable completion history in `choreCompletions` for accountability and later recurring-task analytics.
+- Summarize chore history by week and month with per-person task counts and points.
+- Score chores as Easy 1, Medium 2, Hard 4, and Exceptional 6 points.
 
 ## Shopping And Prices
 

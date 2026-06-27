@@ -5,10 +5,20 @@ const oneDayMs = 24 * 60 * 60 * 1000;
 export const difficultyOptions = [
   { value: "easy", label: "Easy" },
   { value: "medium", label: "Medium" },
-  { value: "difficult", label: "Difficult" }
+  { value: "hard", label: "Hard" },
+  { value: "exceptional", label: "Exceptional" }
 ];
 
 const validDifficulties = new Set(difficultyOptions.map((option) => option.value));
+const legacyDifficultyAliases = {
+  difficult: "hard"
+};
+const difficultyPointValues = {
+  easy: 1,
+  medium: 2,
+  hard: 4,
+  exceptional: 6
+};
 
 export function formatDateKey(date) {
   const year = date.getFullYear();
@@ -38,6 +48,20 @@ export function getCadenceLabel() {
   return "Once";
 }
 
+export function normalizeDifficulty(value) {
+  const difficulty = legacyDifficultyAliases[value] || value;
+
+  return validDifficulties.has(difficulty) ? difficulty : "medium";
+}
+
+export function getDifficultyLabel(difficulty) {
+  return difficultyOptions.find((option) => option.value === normalizeDifficulty(difficulty))?.label || "Medium";
+}
+
+export function getDifficultyPoints(difficulty) {
+  return difficultyPointValues[normalizeDifficulty(difficulty)] || difficultyPointValues.medium;
+}
+
 function normalizeCompletionHistory(chore, startsOn) {
   const completionHistory =
     chore.completionHistory && typeof chore.completionHistory === "object"
@@ -63,9 +87,28 @@ export function normalizeTaskTitle(title) {
   return String(title || "").trim().replace(/\s+/g, " ").toLowerCase();
 }
 
-export function getTaskProfileId(title) {
-  const normalizedTitle = normalizeTaskTitle(title);
-  const slug = normalizedTitle
+function normalizeTaskSignaturePart(value, fallback) {
+  return String(value || fallback).trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+export function getTaskSignature(source) {
+  const task =
+    typeof source === "string"
+      ? { title: source }
+      : source || {};
+
+  return [
+    normalizeTaskTitle(task.title),
+    normalizeTaskSignaturePart(task.area, "Home"),
+    normalizeTaskSignaturePart(task.assignee, "Anyone"),
+    normalizeTaskSignaturePart(task.due, "Anytime"),
+    normalizeDifficulty(task.difficulty)
+  ].join("|");
+}
+
+export function getTaskProfileId(source) {
+  const signature = getTaskSignature(source);
+  const slug = signature
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, "-")
@@ -78,15 +121,16 @@ export function getTaskProfileId(title) {
 export function normalizeTaskProfile(profile, index = 0) {
   const title = profile.title || "Untitled task";
   const completedCount = Number(profile.completedCount);
+  const difficulty = normalizeDifficulty(profile.difficulty);
 
   return {
     ...profile,
     area: profile.area || "Home",
     assignee: profile.assignee || "Anyone",
     completedCount: Number.isFinite(completedCount) && completedCount > 0 ? completedCount : 0,
-    difficulty: validDifficulties.has(profile.difficulty) ? profile.difficulty : "medium",
+    difficulty,
     due: profile.due || "Anytime",
-    id: profile.id || getTaskProfileId(title),
+    id: profile.id || getTaskProfileId({ ...profile, difficulty, title }),
     lastAddedAt: profile.lastAddedAt || null,
     lastCompletedAt: profile.lastCompletedAt || null,
     normalizedTitle: normalizeTaskTitle(title),
@@ -115,7 +159,7 @@ export function sortTaskProfiles(left, right) {
 
 export function normalizeChore(chore, index = 0) {
   const startsOn = chore.startsOn || todayDateKey;
-  const difficulty = validDifficulties.has(chore.difficulty) ? chore.difficulty : "medium";
+  const difficulty = normalizeDifficulty(chore.difficulty);
   const completionHistory = normalizeCompletionHistory(chore, startsOn);
   const title = chore.title || "Untitled task";
 
@@ -128,7 +172,7 @@ export function normalizeChore(chore, index = 0) {
     difficulty,
     due: chore.due || "Anytime",
     normalizedTitle: normalizeTaskTitle(title),
-    profileId: chore.profileId || getTaskProfileId(title),
+    profileId: chore.profileId || getTaskProfileId({ ...chore, difficulty, title }),
     repeatType: "once",
     retiredOn: chore.retiredOn || null,
     sortOrder: chore.sortOrder ?? index,
@@ -175,21 +219,66 @@ export function getAvailableChoresForDate(chores, dateKey = todayDateKey) {
     .sort(sortByBoardOrder);
 }
 
-export function hasAvailableChoreWithTitle(chores, title, excludeChoreId = "", dateKey = todayDateKey) {
-  const normalizedTitle = normalizeTaskTitle(title);
+export function hasMatchingAvailableChore(chores, taskForm, excludeChoreId = "", dateKey = todayDateKey) {
+  const targetSignature = getTaskSignature(taskForm);
+  const normalizedTitle = normalizeTaskTitle(taskForm?.title);
 
   if (!normalizedTitle) {
     return false;
   }
 
   return getAvailableChoresForDate(chores, dateKey).some(
-    (chore) => chore.id !== excludeChoreId && chore.normalizedTitle === normalizedTitle
+    (chore) => chore.id !== excludeChoreId && getTaskSignature(chore) === targetSignature
   );
 }
 
 export const starterChores = [];
 
 export const starterTaskProfiles = [];
+
+export const starterChoreCompletions = [];
+
+export function normalizeChoreCompletion(completion, index = 0) {
+  const completedAt = completion.completedAt || new Date(0).toISOString();
+  const completedDate =
+    completion.completedDate || formatDateKey(new Date(completedAt));
+  const difficulty = normalizeDifficulty(completion.difficulty);
+  const completedBy = completion.completedBy || "Someone";
+  const creditedMembers =
+    Array.isArray(completion.creditedMembers) && completion.creditedMembers.length > 0
+      ? completion.creditedMembers
+      : [completedBy];
+
+  return {
+    ...completion,
+    area: completion.area || "Home",
+    assignee: completion.assignee || "Anyone",
+    choreId: completion.choreId || "",
+    completedAt,
+    completedBy,
+    completedByUid: completion.completedByUid || null,
+    completedDate,
+    creditedMembers,
+    difficulty,
+    doneByBoth: Boolean(completion.doneByBoth),
+    due: completion.due || "Anytime",
+    id: completion.id || `completion-${index}`,
+    occurrenceDate: completion.occurrenceDate || completedDate,
+    points: Number(completion.points) || getDifficultyPoints(difficulty),
+    profileId: completion.profileId || getTaskProfileId(completion),
+    title: completion.title || "Untitled task"
+  };
+}
+
+export function sortChoreCompletions(left, right) {
+  const completedAtSort = String(right.completedAt || "").localeCompare(String(left.completedAt || ""));
+
+  if (completedAtSort !== 0) {
+    return completedAtSort;
+  }
+
+  return String(left.title || "").localeCompare(String(right.title || ""));
+}
 
 export const starterShoppingItems = [
   {
